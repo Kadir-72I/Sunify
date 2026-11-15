@@ -17,7 +17,8 @@ const publishableKeys = (() => {
     return {};
   }
 })();
-const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Object.values(publishableKeys).find((key) => typeof key === 'string' && key.startsWith('sb_publishable_')) || '';
+const publishableKey = Object.values(publishableKeys).find((key): key is string => typeof key === 'string' && key.startsWith('sb_publishable_'));
+const anonKey: string = Deno.env.get('SUPABASE_ANON_KEY') || publishableKey || '';
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const adminClient = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -249,16 +250,30 @@ Deno.serve(async (request) => {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !token) return json({ error: 'GitHub deposu veya yayın yetkisi Supabase Edge Function sırlarında ayarlanmamış.' }, 503);
     const requestedAssets = Array.isArray(body.assets) ? body.assets : [];
     if (requestedAssets.length > MAX_RELEASE_ASSETS) return json({ error: `Bir sürüme en fazla ${MAX_RELEASE_ASSETS} dosya eklenebilir.` }, 400);
-    const assets: Array<{ name: string; url: string }> = [];
+    const assets: Array<{ name: string; size: number; chunks: Array<{ index: number; url: string }> }> = [];
     for (const entry of requestedAssets) {
       if (!entry || typeof entry !== 'object') return json({ error: 'Yayın dosyası listesi geçersiz.' }, 400);
       const item = entry as Record<string, unknown>;
       const name = safeReleaseFileName(String(item.name || ''));
-      const path = String(item.path || '');
-      if (!name || !/^[0-9a-f-]{36}\/.+$/i.test(path)) return json({ error: 'Yayın dosyası bilgisi geçersiz.' }, 400);
-      const { data, error } = await adminClient.storage.from(RELEASE_UPLOAD_BUCKET).createSignedUrl(path, 24 * 60 * 60);
-      if (error || !data?.signedUrl) return json({ error: `“${name}” dosyası okunamadı: ${error?.message || 'imzalı bağlantı oluşturulamadı.'}` }, 502);
-      assets.push({ name, url: data.signedUrl });
+      const legacyPath = String(item.path || '');
+      const requestedChunks = Array.isArray(item.chunks) ? item.chunks : [{ index: 0, path: legacyPath }];
+      const size = Number(item.size || 0);
+      if (!name || !Number.isSafeInteger(size) || size < 0 || size > 2 * 1024 * 1024 * 1024 || requestedChunks.length < 1 || requestedChunks.length > 128) {
+        return json({ error: 'Yayın dosyası bilgisi geçersiz veya GitHub’ın 2 GB dosya sınırını aşıyor.' }, 400);
+      }
+      const chunks: Array<{ index: number; url: string }> = [];
+      for (let index = 0; index < requestedChunks.length; index += 1) {
+        const requestedChunk = requestedChunks[index];
+        if (!requestedChunk || typeof requestedChunk !== 'object') return json({ error: 'Yayın dosyası parçası geçersiz.' }, 400);
+        const chunk = requestedChunk as Record<string, unknown>;
+        const path = String(chunk.path || '');
+        const chunkIndex = Number(chunk.index);
+        if (!/^[0-9a-f-]{36}\/.+$/i.test(path) || chunkIndex !== index) return json({ error: 'Yayın dosyası parça sırası geçersiz.' }, 400);
+        const { data, error } = await adminClient.storage.from(RELEASE_UPLOAD_BUCKET).createSignedUrl(path, 24 * 60 * 60);
+        if (error || !data?.signedUrl) return json({ error: `“${name}” dosyası okunamadı: ${error?.message || 'imzalı bağlantı oluşturulamadı.'}` }, 502);
+        chunks.push({ index, url: data.signedUrl });
+      }
+      assets.push({ name, size, chunks });
     }
     const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/release.yml/dispatches`, {
       method: 'POST',

@@ -46,14 +46,13 @@ jobs:
           npm version --no-git-tag-version $env:RELEASE_VERSION
           @{ repository = $env:RELEASE_REPOSITORY } | ConvertTo-Json | Set-Content -Encoding utf8NoBOM src/build-info.json
 
-      - name: Build Windows installer
-        run: npm run build:win
-
       - name: Download selected release files
         if: ${{ inputs.assets != '' && inputs.assets != '[]' }}
+        id: download-assets
         shell: pwsh
         env:
           RELEASE_ASSETS: ${{ inputs.assets }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           $assets = ConvertFrom-Json -InputObject $env:RELEASE_ASSETS
           if ($assets.Count -gt 8) { throw 'A release may contain at most 8 selected files.' }
@@ -72,10 +71,49 @@ jobs:
               $duplicate++
             }
             $usedNames[$candidate.ToLowerInvariant()] = $true
-            $assetUri = [uri]$asset.url
-            if ($assetUri.Scheme -ne 'https' -or $assetUri.Host -ne 'wkphoyochjczmqdmuazo.supabase.co') { throw 'Selected asset link must use the configured Supabase HTTPS host.' }
-            Invoke-WebRequest -Uri $asset.url -OutFile (Join-Path 'release-assets' $candidate)
+            $targetPath = Join-Path 'release-assets' $candidate
+            if ($asset.chunks) {
+              $partDirectory = Join-Path 'release-assets' ([guid]::NewGuid().ToString())
+              New-Item -ItemType Directory -Force -Path $partDirectory | Out-Null
+              $output = [System.IO.File]::Create($targetPath)
+              try {
+                $expectedIndex = 0
+                foreach ($part in $asset.chunks) {
+                  if ([int]$part.index -ne $expectedIndex) { throw "File chunks are out of order: $candidate" }
+                  $assetUri = [uri]$part.url
+                  if ($assetUri.Scheme -ne 'https' -or $assetUri.Host -ne 'wkphoyochjczmqdmuazo.supabase.co') { throw 'Selected asset links must use the configured Supabase HTTPS host.' }
+                  $partPath = Join-Path $partDirectory ("part-{0:D4}" -f $expectedIndex)
+                  Invoke-WebRequest -Uri $part.url -OutFile $partPath
+                  $input = [System.IO.File]::OpenRead($partPath)
+                  try { $input.CopyTo($output) } finally { $input.Dispose() }
+                  Remove-Item -LiteralPath $partPath -Force
+                  $expectedIndex++
+                }
+              } finally {
+                $output.Dispose()
+                Remove-Item -LiteralPath $partDirectory -Recurse -Force -ErrorAction SilentlyContinue
+              }
+              if ($asset.size -and (Get-Item -LiteralPath $targetPath).Length -ne [long]$asset.size) { throw "Downloaded file size does not match: $candidate" }
+            } else {
+              $assetUri = [uri]$asset.url
+              if ($assetUri.Scheme -ne 'https' -or $assetUri.Host -ne 'wkphoyochjczmqdmuazo.supabase.co') { throw 'Selected asset link must use the configured Supabase HTTPS host.' }
+              Invoke-WebRequest -Uri $asset.url -OutFile $targetPath
+            }
+            if ($candidate -match '^Sunify-Setup-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\.exe$') {
+              $installerPath = Join-Path 'dist' "Sunify-Setup-$env:RELEASE_VERSION.exe"
+              if (Test-Path -LiteralPath $installerPath) { throw 'Only one Sunify setup file can be attached to a release.' }
+              New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
+              Move-Item -LiteralPath $targetPath -Destination $installerPath
+            }
           }
+          $hasExtraAssets = @(Get-ChildItem -LiteralPath 'release-assets' -File).Count -gt 0
+          "has_extra_assets=$($hasExtraAssets.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Build Windows installer when no setup was attached
+        shell: pwsh
+        run: |
+          $installer = Join-Path 'dist' "Sunify-Setup-${{ inputs.version }}.exe"
+          if (-not (Test-Path -LiteralPath $installer)) { npm run build:win; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -85,7 +123,7 @@ jobs:
           body: ${{ inputs.notes }}
           files: |
             dist/Sunify-Setup-${{ inputs.version }}.exe
-            ${{ inputs.assets != '' && inputs.assets != '[]' && 'release-assets/*' || '' }}
+            ${{ steps.download-assets.outputs.has_extra_assets == 'true' && 'release-assets/*' || '' }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
