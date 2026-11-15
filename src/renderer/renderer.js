@@ -2610,9 +2610,11 @@ async function showRuntimeDiagnostics() {
     if (!result.pythonAudio?.ytDlp) {
       showAppNotification(
         'Ses motoru kurulumu gerekli',
-        result.pythonAudio?.python
-          ? 'yt-dlp eksik. Terminalde npm run setup:python çalıştırın.'
-          : 'Python 3 eksik. Kurup ardından npm run setup:python çalıştırın.',
+        result.pythonAudio?.bundled
+          ? 'Yerleşik YouTube ses bileşenleri başlatılamadı. Sunify kurulumunu onarın veya yeniden kurun.'
+          : result.pythonAudio?.python
+            ? 'yt-dlp eksik. Geliştirme sürümünde npm run setup:python çalıştırın.'
+            : 'Ses bileşenleri bulunamadı. Sunify kurulumunu onarın veya yeniden kurun.',
         true
       );
     }

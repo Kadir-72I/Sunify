@@ -1,6 +1,8 @@
 // Resolve playable audio URLs through the optional yt-dlp Python package.
 const { spawn } = require('child_process');
 const { promisify } = require('util');
+const path = require('path');
+const fs = require('fs');
 const execFile = promisify(require('child_process').execFile);
 
 const streamCache = new Map();
@@ -8,6 +10,69 @@ const pendingStreams = new Map();
 const CACHE_TTL_MS = 45 * 60 * 1000;
 const CACHE_LIMIT = 200;
 const EXTRACTION_TIMEOUT_MS = 30_000;
+
+function getBundledRuntimePaths() {
+  let packaged = false;
+  try {
+    packaged = Boolean(process.versions.electron && require('electron').app?.isPackaged);
+  } catch {}
+  const root = packaged
+    ? path.join(process.resourcesPath, 'sunify-tools')
+    : path.resolve(__dirname, '../../../build/runtime');
+  return {
+    ytDlp: path.join(root, 'yt-dlp.exe'),
+    deno: path.join(root, 'deno.exe'),
+  };
+}
+
+function runBundledExtractor(executable, denoPath, target) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--dump-single-json', '--no-warnings', '--no-playlist',
+      '--format', 'bestaudio[ext=m4a]/bestaudio', '--skip-download',
+      '--socket-timeout', '15', '--no-progress', '--quiet',
+      '--js-runtimes', `deno:${denoPath}`, target,
+    ];
+    const child = spawn(executable, args, { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timeout = setTimeout(() => {
+      child.kill();
+      settled = true;
+      reject(new Error('YouTube ses bağlantısı zaman aşımına uğradı.'));
+    }, EXTRACTION_TIMEOUT_MS);
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+      if (stdout.length > 1024 * 1024) child.kill();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(-8192);
+    });
+    child.on('error', (error) => {
+      clearTimeout(timeout);
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      if (settled) return;
+      settled = true;
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || 'YouTube ses bağlantısı alınamadı.'));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout.trim());
+        if (!parsed.url) throw new Error('Ses URL adresi yanıtta yok.');
+        resolve(parsed);
+      } catch (error) {
+        reject(new Error(`YouTube yanıtı çözümlenemedi: ${error.message}`));
+      }
+    });
+  });
+}
 
 function runExtractor(command, target) {
   return new Promise((resolve, reject) => {
@@ -86,11 +151,21 @@ async function getDirectAudioUrl(queryOrId, { forceRefresh = false } = {}) {
   const target = isId ? `https://www.youtube.com/watch?v=${query}` : `ytsearch1:${query}`;
   const request = (async () => {
     let result;
-    try {
-      result = await runExtractor(process.env.SUNIFY_PYTHON || 'python', target);
-    } catch (error) {
-      if (process.env.SUNIFY_PYTHON) throw error;
-      result = await runExtractor('py', target);
+    const bundled = getBundledRuntimePaths();
+    if (process.env.SUNIFY_YTDLP_PATH && process.env.SUNIFY_DENO_PATH) {
+      result = await runBundledExtractor(process.env.SUNIFY_YTDLP_PATH, process.env.SUNIFY_DENO_PATH, target);
+    } else {
+      try {
+        result = await runBundledExtractor(bundled.ytDlp, bundled.deno, target);
+      } catch (error) {
+        if (error.code !== 'ENOENT' && !/spawn .* ENOENT/i.test(error.message)) throw error;
+        try {
+          result = await runExtractor(process.env.SUNIFY_PYTHON || 'python', target);
+        } catch (pythonError) {
+          if (process.env.SUNIFY_PYTHON) throw pythonError;
+          result = await runExtractor('py', target);
+        }
+      }
     }
     if (streamCache.size >= CACHE_LIMIT) streamCache.delete(streamCache.keys().next().value);
     streamCache.set(cacheKey, { timestamp: Date.now(), data: result });
@@ -105,6 +180,20 @@ async function getDirectAudioUrl(queryOrId, { forceRefresh = false } = {}) {
 }
 
 async function getRuntimeStatus() {
+  const bundled = getBundledRuntimePaths();
+  try {
+    const [{ stdout: ytDlpVersion }, { stdout: denoVersion }] = await Promise.all([
+      execFile(bundled.ytDlp, ['--version'], { windowsHide: true, timeout: 5000 }),
+      execFile(bundled.deno, ['--version'], { windowsHide: true, timeout: 5000 }),
+    ]);
+    if (ytDlpVersion.trim() && denoVersion.trim()) {
+      return { python: false, ytDlp: true, deno: true, bundled: true, executable: bundled.ytDlp };
+    }
+  } catch {}
+  if (fs.existsSync(bundled.ytDlp) || fs.existsSync(bundled.deno)) {
+    return { python: false, ytDlp: false, deno: fs.existsSync(bundled.deno), bundled: true, executable: bundled.ytDlp };
+  }
+
   const candidates = [process.env.SUNIFY_PYTHON, 'python', 'py'].filter(Boolean);
   for (const executable of candidates) {
     try {
@@ -113,7 +202,7 @@ async function getRuntimeStatus() {
         ? ['-3', '-c', 'import yt_dlp; print("ok")']
         : ['-c', 'import yt_dlp; print("ok")'];
       const { stdout } = await execFile(executable, args, { windowsHide: true, timeout: 5000 });
-      if (stdout.trim() === 'ok') return { python: true, ytDlp: true, executable };
+      if (stdout.trim() === 'ok') return { python: true, ytDlp: true, deno: false, bundled: false, executable };
     } catch {}
   }
   let pythonAvailable = false;
@@ -124,7 +213,7 @@ async function getRuntimeStatus() {
       break;
     } catch {}
   }
-  return { python: pythonAvailable, ytDlp: false, executable: null };
+  return { python: pythonAvailable, ytDlp: false, deno: false, bundled: false, executable: null };
 }
 
 module.exports = { getDirectAudioUrl, getRuntimeStatus };

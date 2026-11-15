@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron src/main/main.js",
     "server": "node src/server.js",
-    "build:win": "electron-builder --win nsis --publish never",
+    "build:win": "node scripts/prepare-windows-runtimes.js && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-installer-artwork.ps1 && electron-builder --win nsis --x64 --publish never",
     "lint": "eslint src --ext .js",
     "format": "prettier --write src",
     "test": "node --test tests/*.test.js",
@@ -66,14 +66,34 @@
     ],
     "win": {
       "target": "nsis",
-      "artifactName": "Sunify-Setup-${version}.${ext}"
+      "artifactName": "Sunify-Setup-${version}.${ext}",
+      "icon": "build/sunify.ico"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/sunify.ico",
+      "uninstallerIcon": "build/sunify.ico",
+      "installerHeader": "build/installer-header.bmp",
+      "installerSidebar": "build/installer-sidebar.bmp",
+      "include": "build/installer.nsh"
+    },
+    "extraResources": [
+      {
+        "from": "build/runtime/yt-dlp.exe",
+        "to": "sunify-tools/yt-dlp.exe"
+      },
+      {
+        "from": "build/runtime/deno.exe",
+        "to": "sunify-tools/deno.exe"
+      },
+      {
+        "from": "build/runtime/THIRD-PARTY-NOTICES.txt",
+        "to": "sunify-tools/THIRD-PARTY-NOTICES.txt"
+      }
+    ]
   }
 }

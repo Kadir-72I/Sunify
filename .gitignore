@@ -1,5 +1,8 @@
 node_modules/
 dist/
+build/runtime/
+build/*.bmp
+build/*.ico
 downloads/
 data/logs/
 data/sunify_users.json
