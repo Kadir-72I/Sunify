@@ -106,7 +106,7 @@ app.post('/api/admin', async (req, res) => {
     return res.status(400).json({ error: 'Admin isteği geçersiz.' });
   }
   const action = String(req.body.action || '');
-  if (!['admin-login', 'list-users', 'get-user-data', 'delete-user', 'publish-release'].includes(action)) {
+  if (!['admin-login', 'list-users', 'get-user-data', 'delete-user-data', 'delete-user', 'create-release-upload', 'publish-release'].includes(action)) {
     return res.status(400).json({ error: 'Admin işlemi tanınmıyor.' });
   }
   try {
