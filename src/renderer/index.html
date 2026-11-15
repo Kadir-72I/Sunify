@@ -1377,6 +1377,13 @@
                     <input id="adminReleaseVersion" type="text" placeholder="1.1.0" />
                     <label for="adminReleaseNotes">Yenilikler</label>
                     <textarea id="adminReleaseNotes" rows="4" maxlength="5000" placeholder="Bu sürümdeki yenilikler..."></textarea>
+                    <label>Sürüme eklenecek dosyalar</label>
+                    <div class="admin-release-file-picker">
+                      <input id="adminReleaseFiles" type="file" multiple hidden />
+                      <button class="tool-btn" id="adminChooseReleaseFilesButton" type="button"><i class="fa-solid fa-paperclip"></i> Dosya seç</button>
+                      <span class="item-sub">İsteğe bağlı · En fazla 8 dosya, dosya başına 50 MB</span>
+                    </div>
+                    <div id="adminReleaseFileList" class="admin-release-file-list" aria-live="polite"></div>
                     <button class="btn-primary" id="adminPublishReleaseButton" type="button">
                       <i class="fa-solid fa-rocket"></i> Sürümü yayımla
                     </button>

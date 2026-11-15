@@ -6,6 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 const ADMIN_EMAIL = 'abdulkadirguness72@gmail.com';
+const RELEASE_UPLOAD_BUCKET = 'sunify-release-staging';
+const MAX_RELEASE_ASSETS = 8;
 const pinAttempts = new Map<string, { count: number; resetAt: number }>();
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const publishableKeys = (() => {
@@ -26,6 +28,24 @@ function json(data: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+function safeReleaseFileName(value: string) {
+  const basename = value.split(/[\\/]/).pop() || '';
+  const safeName = basename.replace(/[\u0000-\u001f<>:"|?*]/g, '_').trim();
+  return safeName && safeName !== '.' && safeName !== '..' ? safeName.slice(0, 180) : '';
+}
+
+async function ensureReleaseUploadBucket() {
+  const { data, error } = await adminClient.storage.getBucket(RELEASE_UPLOAD_BUCKET);
+  if (data) return null;
+  if (error && !/not found|does not exist/i.test(error.message)) return error.message;
+  const { error: createError } = await adminClient.storage.createBucket(RELEASE_UPLOAD_BUCKET, {
+    public: false,
+    fileSizeLimit: '50MB',
+  });
+  if (createError && !/already exists/i.test(createError.message)) return createError.message;
+  return null;
 }
 
 async function pinMatches(candidate: string) {
@@ -160,6 +180,17 @@ Deno.serve(async (request) => {
   const authorization = await verifyAdmin(request, pin);
   if ('error' in authorization) return json({ error: authorization.error }, authorization.status);
 
+  if (action === 'create-release-upload') {
+    const name = safeReleaseFileName(String(body.name || ''));
+    if (!name) return json({ error: 'Dosya adı geçersiz.' }, 400);
+    const bucketError = await ensureReleaseUploadBucket();
+    if (bucketError) return json({ error: `Yayın dosyası alanı hazırlanamadı: ${bucketError}` }, 502);
+    const path = `${crypto.randomUUID()}/${name}`;
+    const { data, error } = await adminClient.storage.from(RELEASE_UPLOAD_BUCKET).createSignedUploadUrl(path);
+    if (error || !data?.signedUrl) return json({ error: error?.message || 'Güvenli yükleme bağlantısı oluşturulamadı.' }, 502);
+    return json({ uploadUrl: data.signedUrl, path });
+  }
+
   if (action === 'list-users') {
     const users: Array<Record<string, unknown>> = [];
     for (let page = 1; page <= 10; page += 1) {
@@ -216,6 +247,19 @@ Deno.serve(async (request) => {
     const token = Deno.env.get('SUNIFY_GITHUB_TOKEN') || '';
     const ref = Deno.env.get('SUNIFY_GITHUB_REF') || 'main';
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !token) return json({ error: 'GitHub deposu veya yayın yetkisi Supabase Edge Function sırlarında ayarlanmamış.' }, 503);
+    const requestedAssets = Array.isArray(body.assets) ? body.assets : [];
+    if (requestedAssets.length > MAX_RELEASE_ASSETS) return json({ error: `Bir sürüme en fazla ${MAX_RELEASE_ASSETS} dosya eklenebilir.` }, 400);
+    const assets: Array<{ name: string; url: string }> = [];
+    for (const entry of requestedAssets) {
+      if (!entry || typeof entry !== 'object') return json({ error: 'Yayın dosyası listesi geçersiz.' }, 400);
+      const item = entry as Record<string, unknown>;
+      const name = safeReleaseFileName(String(item.name || ''));
+      const path = String(item.path || '');
+      if (!name || !/^[0-9a-f-]{36}\/.+$/i.test(path)) return json({ error: 'Yayın dosyası bilgisi geçersiz.' }, 400);
+      const { data, error } = await adminClient.storage.from(RELEASE_UPLOAD_BUCKET).createSignedUrl(path, 24 * 60 * 60);
+      if (error || !data?.signedUrl) return json({ error: `“${name}” dosyası okunamadı: ${error?.message || 'imzalı bağlantı oluşturulamadı.'}` }, 502);
+      assets.push({ name, url: data.signedUrl });
+    }
     const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/release.yml/dispatches`, {
       method: 'POST',
       headers: {
@@ -224,7 +268,7 @@ Deno.serve(async (request) => {
         'X-GitHub-Api-Version': '2022-11-28',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ ref, inputs: { version, notes } }),
+      body: JSON.stringify({ ref, inputs: { version, notes, assets: JSON.stringify(assets) } }),
     });
     if (!response.ok) return json({ error: `GitHub yayın akışı başlatılamadı (${response.status}).` }, 502);
     return json({ success: true, version, message: 'Windows derlemesi başladı. Tamamlanınca GitHub Releases bölümünde yayımlanacak.' });

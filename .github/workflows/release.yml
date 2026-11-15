@@ -11,6 +11,11 @@ on:
         description: Release notes shown in Sunify
         required: false
         type: string
+      assets:
+        description: JSON list of selected release asset URLs
+        required: false
+        default: '[]'
+        type: string
 
 permissions:
   contents: write
@@ -44,13 +49,43 @@ jobs:
       - name: Build Windows installer
         run: npm run build:win
 
+      - name: Download selected release files
+        if: ${{ inputs.assets != '' && inputs.assets != '[]' }}
+        shell: pwsh
+        env:
+          RELEASE_ASSETS: ${{ inputs.assets }}
+        run: |
+          $assets = ConvertFrom-Json -InputObject $env:RELEASE_ASSETS
+          if ($assets.Count -gt 8) { throw 'A release may contain at most 8 selected files.' }
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          $usedNames = @{}
+          foreach ($asset in $assets) {
+            $name = [System.IO.Path]::GetFileName([string]$asset.name)
+            $name = $name -replace '[<>:"/\\|?*\x00-\x1f]', '_'
+            if ([string]::IsNullOrWhiteSpace($name) -or $name -in @('.', '..')) { throw 'An attached file has an invalid name.' }
+            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($name)
+            $extension = [System.IO.Path]::GetExtension($name)
+            $candidate = $name
+            $duplicate = 2
+            while ($usedNames.ContainsKey($candidate.ToLowerInvariant())) {
+              $candidate = "$baseName ($duplicate)$extension"
+              $duplicate++
+            }
+            $usedNames[$candidate.ToLowerInvariant()] = $true
+            $assetUri = [uri]$asset.url
+            if ($assetUri.Scheme -ne 'https' -or $assetUri.Host -ne 'wkphoyochjczmqdmuazo.supabase.co') { throw 'Selected asset link must use the configured Supabase HTTPS host.' }
+            Invoke-WebRequest -Uri $asset.url -OutFile (Join-Path 'release-assets' $candidate)
+          }
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
           name: Sunify v${{ inputs.version }}
           body: ${{ inputs.notes }}
-          files: dist/Sunify-Setup-${{ inputs.version }}.exe
+          files: |
+            dist/Sunify-Setup-${{ inputs.version }}.exe
+            ${{ inputs.assets != '' && inputs.assets != '[]' && 'release-assets/*' || '' }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

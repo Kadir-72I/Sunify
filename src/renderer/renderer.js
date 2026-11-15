@@ -3451,6 +3451,51 @@ function setupSettingsModal() {
   const adminClearUserDataButton = document.getElementById('adminClearUserDataButton');
   const adminDeleteUserButton = document.getElementById('adminDeleteUserButton');
   const adminReleaseStatus = document.getElementById('adminReleaseStatus');
+  const adminReleaseFilesInput = document.getElementById('adminReleaseFiles');
+  const adminReleaseFileList = document.getElementById('adminReleaseFileList');
+  const adminReleaseFiles = [];
+  const maxAdminReleaseFiles = 8;
+  const maxAdminReleaseFileBytes = 50 * 1024 * 1024;
+  const formatReleaseFileSize = (size) => (size >= 1024 * 1024 ? `${(size / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`);
+  const renderAdminReleaseFiles = () => {
+    if (!adminReleaseFileList) return;
+    adminReleaseFileList.replaceChildren();
+    adminReleaseFiles.forEach((file, index) => {
+      const row = document.createElement('div');
+      row.className = 'admin-release-file-row';
+      const label = document.createElement('span');
+      label.textContent = `${file.name} · ${formatReleaseFileSize(file.size)}`;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'tool-btn icon-only';
+      remove.setAttribute('aria-label', `${file.name} dosyasını kaldır`);
+      remove.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+      remove.addEventListener('click', () => {
+        adminReleaseFiles.splice(index, 1);
+        renderAdminReleaseFiles();
+      });
+      row.append(label, remove);
+      adminReleaseFileList.append(row);
+    });
+  };
+  document.getElementById('adminChooseReleaseFilesButton')?.addEventListener('click', () => adminReleaseFilesInput?.click());
+  adminReleaseFilesInput?.addEventListener('change', () => {
+    const incoming = Array.from(adminReleaseFilesInput.files || []);
+    adminReleaseFilesInput.value = '';
+    const available = maxAdminReleaseFiles - adminReleaseFiles.length;
+    if (incoming.length > available) {
+      showAppNotification('Dosya sınırı', `Bir sürüme en fazla ${maxAdminReleaseFiles} dosya ekleyebilirsin.`, true);
+    }
+    for (const file of incoming.slice(0, Math.max(0, available))) {
+      if (file.size > maxAdminReleaseFileBytes) {
+        showAppNotification('Dosya çok büyük', `${file.name} 50 MB sınırını aşıyor.`, true);
+        continue;
+      }
+      if (adminReleaseFiles.some((existing) => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified)) continue;
+      adminReleaseFiles.push(file);
+    }
+    renderAdminReleaseFiles();
+  });
   const adminRequest = async (payload, authenticated = true) => {
     const response = await fetch(`${API_BASE}/admin`, {
       method: 'POST',
@@ -3592,10 +3637,25 @@ function setupSettingsModal() {
     const version = document.getElementById('adminReleaseVersion').value.trim();
     const notes = document.getElementById('adminReleaseNotes').value.trim();
     if (button) button.disabled = true;
-    if (adminReleaseStatus) adminReleaseStatus.textContent = 'GitHub Actions yayını başlatılıyor...';
     try {
-      const result = await adminRequest({ action: 'publish-release', version, notes });
+      const uploadedAssets = [];
+      for (let index = 0; index < adminReleaseFiles.length; index += 1) {
+        const file = adminReleaseFiles[index];
+        if (adminReleaseStatus) adminReleaseStatus.textContent = `Dosyalar güvenli alana yükleniyor (${index + 1}/${adminReleaseFiles.length})...`;
+        const { uploadUrl, path } = await adminRequest({ action: 'create-release-upload', name: file.name });
+        const uploadResponse = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'false' },
+          body: file,
+        });
+        if (!uploadResponse.ok) throw new Error(`${file.name} yüklenemedi (${uploadResponse.status}).`);
+        uploadedAssets.push({ name: file.name, path });
+      }
+      if (adminReleaseStatus) adminReleaseStatus.textContent = 'GitHub Actions yayını başlatılıyor...';
+      const result = await adminRequest({ action: 'publish-release', version, notes, assets: uploadedAssets });
       if (adminReleaseStatus) adminReleaseStatus.textContent = result.message;
+      adminReleaseFiles.splice(0, adminReleaseFiles.length);
+      renderAdminReleaseFiles();
       showAppNotification('Sürüm yayını', result.message);
     } catch (error) {
       if (adminReleaseStatus) adminReleaseStatus.textContent = error.message;

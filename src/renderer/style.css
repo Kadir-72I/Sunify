@@ -1981,6 +1981,11 @@ body::before {
   box-shadow: 0 0 0 3px rgba(216, 121, 236, 0.12);
 }
 .admin-release-card textarea { resize: vertical; min-height: 86px; }
+.admin-release-file-picker { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.admin-release-file-list { display:grid; gap:6px; }
+.admin-release-file-row { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; padding:7px 10px; border:1px solid rgba(255,255,255,.1); border-radius:9px; background:rgba(255,255,255,.04); color:var(--text-secondary); font-size:12px; }
+.admin-release-file-row > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-release-file-row .tool-btn { flex:0 0 auto; }
 .admin-card-heading {
   display: flex;
   align-items: flex-start;
