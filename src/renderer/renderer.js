@@ -512,27 +512,32 @@ window.sunifyAPI?.onMiniPlayerControl?.((action, value) => {
   }
 });
 
+let miniPlayerAccent = '#a78bfa';
+let lastMiniPlayerStateKey = '';
 function publishMiniPlayerState() {
   if (!window.sunifyAPI?.updateMiniPlayerState) return;
   const duration = audio?.duration || currentTrack?.duration || 0;
   const current = audio?.currentTime || 0;
-  const colorValue = getComputedStyle(document.body).getPropertyValue('--cover-color-solid').trim();
-  let accent = '#a78bfa';
-  const rgb = colorValue.match(/rgba?\(\s*(\d+)\D+(\d+)\D+(\d+)/i);
-  if (rgb) accent = `#${rgb.slice(1, 4).map((part) => Number(part).toString(16).padStart(2, '0')).join('')}`;
-  else if (/^#[\da-f]{6}$/i.test(colorValue)) accent = colorValue;
+  const title = currentTrack?.title || 'Sunify';
+  const artist = currentTrack?.artist || 'Bir şarkı seç';
+  const thumbnail = currentTrack?.thumbnail || '';
+  const playing = Boolean(currentTrack && isPlaying);
+  // The mini player displays time at one-second precision, so do not resend
+  // duplicate progress updates for every frequent media timeupdate event.
+  const stateKey = `${title}\u0000${artist}\u0000${thumbnail}\u0000${playing}\u0000${Math.floor(current)}\u0000${Math.floor(duration)}\u0000${miniPlayerAccent}`;
+  if (stateKey === lastMiniPlayerStateKey) return;
+  lastMiniPlayerStateKey = stateKey;
   window.sunifyAPI.updateMiniPlayerState({
-    title: currentTrack?.title || 'Sunify',
-    artist: currentTrack?.artist || 'Bir şarkı seç',
-    thumbnail: currentTrack?.thumbnail || '',
-    playing: Boolean(currentTrack && isPlaying),
+    title,
+    artist,
+    thumbnail,
+    playing,
     progress: duration > 0 ? (current / duration) * 100 : 0,
     elapsed: formatTime(current),
     duration: formatTime(duration),
-    accent,
+    accent: miniPlayerAccent,
   });
 }
-setInterval(publishMiniPlayerState, 1000);
 
 if (winFullscreenBtn) {
   winFullscreenBtn.onclick = () => {
@@ -2288,6 +2293,13 @@ async function playSelectedTrack(track, playlist = [], index = 0) {
 let lyricsRequestId = 0;
 function renderLyricsState(message, kind = 'empty', retry = false) {
   if (!lyricsLinesContainer) return;
+  renderedLyricLines = [];
+  renderedInstrumentalGaps = [];
+  activeInstrumentalGap = null;
+  completedInstrumentalGapCount = 0;
+  lastInstrumentalSyncTime = -Infinity;
+  activeLyricWordIndex = -1;
+  activeLyricIndex = -1;
   const state = document.createElement('div');
   state.className = `lyrics-state-card ${kind}`;
   const icon = document.createElement('i');
@@ -2446,9 +2458,22 @@ function parseLRCWithWordTiming(lrcText, totalDurationSeconds = 0) {
   });
 }
 
+let renderedLyricLines = [];
+let renderedInstrumentalGaps = [];
+let activeInstrumentalGap = null;
+let completedInstrumentalGapCount = 0;
+let lastInstrumentalSyncTime = -Infinity;
+let activeLyricWordIndex = -1;
+
 function renderSyncedLyrics(lyrics) {
   lyricsLinesContainer.innerHTML = '';
+  renderedLyricLines = [];
+  renderedInstrumentalGaps = [];
   activeInstrumentalGap = null;
+  completedInstrumentalGapCount = 0;
+  lastInstrumentalSyncTime = -Infinity;
+  activeLyricWordIndex = -1;
+  activeLyricIndex = -1;
   if (lyrics[0]?.time >= 1.35) {
     lyricsLinesContainer.appendChild(createLyricInstrumentalGap(0, lyrics[0].time));
   }
@@ -2456,6 +2481,7 @@ function renderSyncedLyrics(lyrics) {
     const p = document.createElement('p');
     p.className = 'lyric-line';
     p.id = item.id;
+    const wordElements = [];
 
     item.words.forEach((wObj) => {
       const span = document.createElement('span');
@@ -2464,12 +2490,14 @@ function renderSyncedLyrics(lyrics) {
       span.textContent = wObj.word;
       p.appendChild(span);
       p.appendChild(document.createTextNode(' '));
+      wordElements.push(span);
     });
 
     p.onclick = () => {
       audio.currentTime = item.time;
     };
     lyricsLinesContainer.appendChild(p);
+    renderedLyricLines.push({ element: p, words: wordElements });
 
     if (item.instrumentalDuration >= 1.35) {
       lyricsLinesContainer.appendChild(createLyricInstrumentalGap(item.instrumentalStart, item.instrumentalEnd));
@@ -2485,36 +2513,67 @@ function createLyricInstrumentalGap(start, end) {
   note.dataset.gapEnd = String(end);
   note.setAttribute('aria-label', 'Müzik aralığı');
   note.innerHTML = '<span class="lyric-note-base"><i class="fa-solid fa-music"></i></span><span class="lyric-note-fill"><i class="fa-solid fa-music"></i></span>';
+  renderedInstrumentalGaps.push({ element: note, start, end });
   return note;
 }
 
-let activeInstrumentalGap = null;
 function updateLyricInstrumentalGaps(currentTime) {
-  document.querySelectorAll('#lyricsLinesContainer .lyric-instrumental-gap').forEach((note) => {
-    const start = Number(note.dataset.gapStart);
-    const end = Number(note.dataset.gapEnd);
-    const duration = Math.max(0.001, end - start);
-    const progress = Math.max(0, Math.min(1, (currentTime - start) / duration));
-    const isActive = currentTime >= start && currentTime < end;
-    note.style.setProperty('--note-progress', `${progress * 100}%`);
-    note.classList.toggle('active', isActive);
-    note.classList.toggle('complete', currentTime >= end);
-    if (isActive && activeInstrumentalGap !== note) {
-      activeInstrumentalGap = note;
+  if (!renderedInstrumentalGaps.length) return;
+
+  if (currentTime < lastInstrumentalSyncTime) {
+    let low = 0;
+    let high = renderedInstrumentalGaps.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (renderedInstrumentalGaps[middle].end <= currentTime) low = middle + 1;
+      else high = middle;
+    }
+    const nextCompletedCount = low;
+    for (let index = Math.min(completedInstrumentalGapCount, nextCompletedCount); index < Math.max(completedInstrumentalGapCount, nextCompletedCount); index += 1) {
+      renderedInstrumentalGaps[index].element.classList.toggle('complete', index < nextCompletedCount);
+    }
+    completedInstrumentalGapCount = nextCompletedCount;
+  } else {
+    while (completedInstrumentalGapCount < renderedInstrumentalGaps.length
+      && renderedInstrumentalGaps[completedInstrumentalGapCount].end <= currentTime) {
+      renderedInstrumentalGaps[completedInstrumentalGapCount].element.classList.add('complete');
+      completedInstrumentalGapCount += 1;
+    }
+  }
+
+  const candidate = renderedInstrumentalGaps[completedInstrumentalGapCount];
+  const nextActiveGap = candidate && currentTime >= candidate.start && currentTime < candidate.end ? candidate.element : null;
+  if (activeInstrumentalGap !== nextActiveGap) {
+    activeInstrumentalGap?.classList.remove('active');
+    activeInstrumentalGap = nextActiveGap;
+    if (activeInstrumentalGap) {
+      activeInstrumentalGap.classList.add('active');
       const container = lyricsLinesContainer;
       const containerRect = container.getBoundingClientRect();
-      const noteRect = note.getBoundingClientRect();
+      const noteRect = activeInstrumentalGap.getBoundingClientRect();
       const target = container.scrollTop + noteRect.top - containerRect.top - container.clientHeight * 0.5;
       const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
       container.scrollTo({ top: Math.max(0, Math.min(maxScroll, target)), behavior: 'smooth' });
-    } else if (!isActive && activeInstrumentalGap === note) {
-      activeInstrumentalGap = null;
     }
-  });
+  }
+
+  if (activeInstrumentalGap && candidate) {
+    const duration = Math.max(0.001, candidate.end - candidate.start);
+    const progress = Math.max(0, Math.min(1, (currentTime - candidate.start) / duration));
+    activeInstrumentalGap.style.setProperty('--note-progress', `${progress * 100}%`);
+  }
+  lastInstrumentalSyncTime = currentTime;
 }
 
 function renderPlainLyrics(plainText) {
   lyricsLinesContainer.innerHTML = '';
+  renderedLyricLines = [];
+  renderedInstrumentalGaps = [];
+  activeInstrumentalGap = null;
+  completedInstrumentalGapCount = 0;
+  lastInstrumentalSyncTime = -Infinity;
+  activeLyricWordIndex = -1;
+  activeLyricIndex = -1;
   const lines = plainText.split('\n');
   lines.forEach((line) => {
     const p = document.createElement('p');
@@ -2577,30 +2636,47 @@ function syncActiveLyric(rawTime) {
   const currentTime = getLyricsSyncTime(rawTime);
   updateLyricInstrumentalGaps(currentTime);
 
-  let activeIndex = -1;
-  for (let i = 0; i < parsedLyrics.length; i++) {
-    if (currentTime >= parsedLyrics[i].time) {
-      activeIndex = i;
-    } else {
-      break;
+  let low = 0;
+  let high = parsedLyrics.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (currentTime >= parsedLyrics[middle].time) low = middle + 1;
+    else high = middle;
+  }
+  const activeIndex = low - 1;
+
+  let activeWordIndex = -1;
+  if (activeIndex >= 0) {
+    const words = parsedLyrics[activeIndex].words || [];
+    let wordLow = 0;
+    let wordHigh = words.length;
+    while (wordLow < wordHigh) {
+      const middle = (wordLow + wordHigh) >>> 1;
+      if (currentTime >= words[middle].startTime) wordLow = middle + 1;
+      else wordHigh = middle;
     }
+    activeWordIndex = wordLow - 1;
   }
 
-  const lineElements = document.querySelectorAll('#lyricsLinesContainer .lyric-line');
-  lineElements.forEach((element, index) => {
-    element.classList.toggle('active', index === activeIndex);
-    element.classList.toggle('passed', activeIndex >= 0 && index < activeIndex);
-    const line = parsedLyrics[index];
-    element.querySelectorAll('.lyric-word').forEach((wordElement, wordIndex) => {
-      const word = line?.words?.[wordIndex];
-      wordElement.classList.toggle('spoken', Boolean(word && currentTime >= word.startTime));
-    });
-  });
-
   if (activeIndex !== activeLyricIndex) {
+    const firstChangedLine = Math.max(0, Math.min(activeLyricIndex, activeIndex));
+    const lastChangedLine = Math.min(parsedLyrics.length - 1, Math.max(activeLyricIndex, activeIndex));
+    for (let index = firstChangedLine; index <= lastChangedLine; index += 1) {
+      const renderedLine = renderedLyricLines[index];
+      if (!renderedLine) continue;
+      renderedLine.element.classList.toggle('active', index === activeIndex);
+      renderedLine.element.classList.toggle('passed', activeIndex >= 0 && index < activeIndex);
+      const words = parsedLyrics[index].words || [];
+      renderedLine.words.forEach((wordElement, wordIndex) => {
+        const word = words[wordIndex];
+        const spoken = index < activeIndex || (index === activeIndex && Boolean(word && currentTime >= word.startTime));
+        wordElement.classList.toggle('spoken', spoken);
+      });
+    }
     activeLyricIndex = activeIndex;
+    activeLyricWordIndex = activeWordIndex;
     if (activeIndex >= 0) {
-      const activeEl = document.getElementById(parsedLyrics[activeIndex].id);
+      const activeEl = renderedLyricLines[activeIndex]?.element;
       if (activeEl) {
         const container = lyricsLinesContainer;
         const containerRect = container.getBoundingClientRect();
@@ -2610,6 +2686,20 @@ function syncActiveLyric(rawTime) {
         container.scrollTo({ top: Math.max(0, Math.min(maxScroll, target)), behavior: 'smooth' });
       }
     }
+    return;
+  }
+
+  if (activeIndex >= 0 && activeWordIndex !== activeLyricWordIndex) {
+    const renderedLine = renderedLyricLines[activeIndex];
+    if (renderedLine) {
+      const firstWord = Math.max(0, Math.min(activeLyricWordIndex, activeWordIndex) + 1);
+      const lastWord = Math.min(renderedLine.words.length - 1, Math.max(activeLyricWordIndex, activeWordIndex));
+      const spoken = activeWordIndex > activeLyricWordIndex;
+      for (let index = firstWord; index <= lastWord; index += 1) {
+        renderedLine.words[index].classList.toggle('spoken', spoken);
+      }
+    }
+    activeLyricWordIndex = activeWordIndex;
   }
 }
 
@@ -3028,6 +3118,7 @@ async function applyCoverAdaptiveColor(coverUrl) {
       '--cover-color',
       `rgba(${r}, ${g}, ${b}, ${coverAlpha})`
     );
+    miniPlayerAccent = `#${[r, g, b].map((channel) => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0')).join('')}`;
     const darkR = Math.floor(r * 0.35);
     const darkG = Math.floor(g * 0.35);
     const darkB = Math.floor(b * 0.35);
@@ -3040,6 +3131,7 @@ async function applyCoverAdaptiveColor(coverUrl) {
     if (backdrop) {
       backdrop.style.backgroundImage = `url("${coverUrl}")`;
     }
+    publishMiniPlayerState();
   }
 
   // 1. Tarayıcı içi hızlı Canvas analizi (CORS hatası veya ağ gecikmesi olmadan %100 çalışır)

@@ -15,8 +15,6 @@ process.env.SUNIFY_SUPABASE_CONFIG_FILE = path.join(app.getPath('userData'), 'su
 process.env.SUNIFY_DOWNLOADS_DIR = path.join(app.getPath('userData'), 'downloads');
 const { startServer } = require('../server');
 const { updatePresence, clearPresence, initRPC } = require('../services/rpc/rpc');
-app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-app.commandLine.appendSwitch('disable-gpu-program-cache');
 app.commandLine.appendSwitch('log-level', '3');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
