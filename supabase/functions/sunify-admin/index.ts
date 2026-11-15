@@ -285,7 +285,18 @@ Deno.serve(async (request) => {
       },
       body: JSON.stringify({ ref, inputs: { version, notes, assets: JSON.stringify(assets) } }),
     });
-    if (!response.ok) return json({ error: `GitHub yayın akışı başlatılamadı (${response.status}).` }, 502);
+    if (!response.ok) {
+      let githubMessage = '';
+      try {
+        const errorBody = await response.json();
+        githubMessage = typeof errorBody?.message === 'string' ? errorBody.message : '';
+      } catch {}
+      const permissionHint = response.status === 403
+        ? 'GitHub tokenında Sunify deposu için Actions: Read and write izni ve depo erişimi gerekir.'
+        : '';
+      const detail = [permissionHint, githubMessage].filter(Boolean).join(' ');
+      return json({ error: `GitHub yayın akışı başlatılamadı (${response.status}).${detail ? ` ${detail}` : ''}` }, response.status === 403 ? 403 : 502);
+    }
     return json({ success: true, version, message: 'Windows derlemesi başladı. Tamamlanınca GitHub Releases bölümünde yayımlanacak.' });
   }
 
