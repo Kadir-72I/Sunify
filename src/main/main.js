@@ -28,6 +28,7 @@ const miniPlayerSettings = {
   alwaysOnTop: true,
   position: 'top-center',
   size: 'medium',
+  opacity: 0.88,
 };
 
 function parseEmailVerificationCallback(rawUrl) {
@@ -101,6 +102,7 @@ function applyMiniPlayerSettings() {
   miniPlayerWindow.setBounds(bounds);
   miniPlayerWindow.setAlwaysOnTop(miniPlayerSettings.alwaysOnTop, 'floating');
   miniPlayerWindow.webContents.send('mini-player-size', miniPlayerSettings.size);
+  miniPlayerWindow.webContents.send('mini-player-opacity', miniPlayerSettings.opacity);
 }
 
 function showMiniPlayer(force = false) {
@@ -223,6 +225,7 @@ ipcMain.on('mini-player-settings', (event, settings) => {
     ? settings.position : 'top-center';
   miniPlayerSettings.size = ['small', 'medium', 'large'].includes(settings.size)
     ? settings.size : 'medium';
+  miniPlayerSettings.opacity = Math.max(0.35, Math.min(1, Number(settings.opacity) || 0.88));
   if ((!miniPlayerSettings.enabled || !miniPlayerSettings.onMinimize) && miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
     miniPlayerWindow.hide();
   } else {
@@ -231,6 +234,14 @@ ipcMain.on('mini-player-settings', (event, settings) => {
       miniPlayerDismissed = false;
       showMiniPlayer();
     }
+  }
+});
+
+ipcMain.on('mini-player-opacity', (event, opacity) => {
+  if (!fromAppWindow(event)) return;
+  miniPlayerSettings.opacity = Math.max(0.35, Math.min(1, Number(opacity) || 0.88));
+  if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+    miniPlayerWindow.webContents.send('mini-player-opacity', miniPlayerSettings.opacity);
   }
 });
 

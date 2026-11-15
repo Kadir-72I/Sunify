@@ -3367,6 +3367,8 @@ function setupMiniPlayerSettings() {
   const enabled = document.getElementById('settingOverlayEnabled');
   const onMinimize = document.getElementById('settingOverlayOnMinimize');
   const alwaysOnTop = document.getElementById('settingOverlayAlwaysOnTop');
+  const opacity = document.getElementById('settingOverlayOpacity');
+  const opacityValue = document.getElementById('settingOverlayOpacityValue');
   const positionGroup = document.getElementById('settingOverlayPos');
   const sizeGroup = document.getElementById('settingOverlaySize');
   if (!enabled || !onMinimize || !alwaysOnTop) return;
@@ -3374,6 +3376,9 @@ function setupMiniPlayerSettings() {
   enabled.checked = localStorage.getItem('sunify_setting_overlay_enabled') !== 'false';
   onMinimize.checked = localStorage.getItem('sunify_setting_overlay_on_minimize') !== 'false';
   alwaysOnTop.checked = localStorage.getItem('sunify_setting_overlay_always_on_top') !== 'false';
+  const savedOpacity = Math.max(35, Math.min(100, Number(localStorage.getItem('sunify_setting_overlay_opacity')) || 88));
+  if (opacity) opacity.value = String(savedOpacity);
+  if (opacityValue) opacityValue.value = `${savedOpacity}%`;
   const position = localStorage.getItem('sunify_setting_overlay_pos') || 'top-center';
   const size = localStorage.getItem('sunify_setting_overlay_size') || 'medium';
   positionGroup?.querySelectorAll('.pill-btn').forEach((button) => button.classList.toggle('active', button.dataset.val === position));
@@ -3383,6 +3388,7 @@ function setupMiniPlayerSettings() {
     enabled: enabled.checked,
     onMinimize: onMinimize.checked,
     alwaysOnTop: alwaysOnTop.checked,
+    opacity: (Number(opacity?.value) || 88) / 100,
     position: localStorage.getItem('sunify_setting_overlay_pos') || 'top-center',
     size: localStorage.getItem('sunify_setting_overlay_size') || 'medium',
   });
@@ -3395,6 +3401,12 @@ function setupMiniPlayerSettings() {
   enabled.onchange = syncSettings;
   onMinimize.onchange = syncSettings;
   alwaysOnTop.onchange = syncSettings;
+  opacity?.addEventListener('input', () => {
+    const value = Math.max(35, Math.min(100, Number(opacity.value) || 88));
+    if (opacityValue) opacityValue.value = `${value}%`;
+    localStorage.setItem('sunify_setting_overlay_opacity', String(value));
+    window.sunifyAPI?.updateMiniPlayerOpacity?.(value / 100);
+  });
 
   positionGroup?.querySelectorAll('.pill-btn').forEach((button) => {
     button.onclick = () => {

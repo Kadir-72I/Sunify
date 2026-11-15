@@ -2086,6 +2086,9 @@ body::before {
 .setting-item-row:last-child {
   border-bottom: none;
 }
+.overlay-opacity-control { display:flex; align-items:center; gap:12px; min-width:220px; }
+.overlay-opacity-control input[type="range"] { width:176px; accent-color:var(--accent-color); cursor:pointer; }
+.overlay-opacity-control output { min-width:38px; color:var(--text-primary); font-size:12px; font-variant-numeric:tabular-nums; text-align:right; }
 .setting-item-column {
   padding: 16px 0;
 }

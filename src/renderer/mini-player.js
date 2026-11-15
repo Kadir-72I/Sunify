@@ -4,8 +4,8 @@ const elements = {
   cover: document.getElementById('cover'),
   progress: document.getElementById('progress'),
   time: document.getElementById('time'),
-  playIcon: document.getElementById('play-icon'),
 };
+const miniPlayer = document.querySelector('.mini-player');
 
 document.querySelectorAll('[data-action]').forEach((button) => {
   button.addEventListener('click', () => window.miniPlayerAPI.action(button.dataset.action));
@@ -21,13 +21,20 @@ window.miniPlayerAPI.onSize((size) => {
   document.body.dataset.size = ['small', 'medium', 'large'].includes(size) ? size : 'medium';
 });
 
+window.miniPlayerAPI.onOpacity((opacity) => {
+  const value = Math.max(0.35, Math.min(1, Number(opacity) || 0.88));
+  miniPlayer.style.setProperty('--glass-opacity', String(value));
+});
+
 window.miniPlayerAPI.onState((state) => {
-  elements.title.textContent = state.title || 'Sunify';
-  elements.artist.textContent = state.artist || 'Bir şarkı seç';
-  if (state.thumbnail) elements.cover.src = state.thumbnail;
-  else elements.cover.removeAttribute('src');
-  elements.progress.style.width = `${state.progress}%`;
+  const title = state.title || 'Sunify';
+  const artist = state.artist || 'Bir şarkı seç';
+  if (elements.title.textContent !== title) elements.title.textContent = title;
+  if (elements.artist.textContent !== artist) elements.artist.textContent = artist;
+  if (state.thumbnail && elements.cover.getAttribute('src') !== state.thumbnail) elements.cover.src = state.thumbnail;
+  else if (!state.thumbnail && elements.cover.hasAttribute('src')) elements.cover.removeAttribute('src');
+  elements.progress.style.width = `${Math.max(0, Math.min(100, Number(state.progress) || 0))}%`;
   elements.time.textContent = `${state.elapsed} / ${state.duration}`;
-  elements.playIcon.textContent = state.playing ? 'Ⅱ' : '▶';
-  document.querySelector('.mini-player').style.setProperty('--accent', state.accent);
+  miniPlayer.classList.toggle('is-playing', Boolean(state.playing));
+  miniPlayer.style.setProperty('--accent', state.accent);
 });

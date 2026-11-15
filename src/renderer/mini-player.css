@@ -3,6 +3,7 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
 body { padding: 2px; }
 .mini-player {
   --accent: #a78bfa;
+  --glass-opacity: .88;
   position: relative;
   display: flex;
   align-items: center;
@@ -11,32 +12,36 @@ body { padding: 2px; }
   height: 100%;
   padding: 9px 40px 9px 10px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,.13);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, rgba(255,255,255,.14));
   border-radius: 16px;
-  background: linear-gradient(100deg, color-mix(in srgb, var(--accent) 24%, rgba(18,18,25,.88)), rgba(18,18,25,.83));
+  background: linear-gradient(105deg, color-mix(in srgb, var(--accent) 24%, rgba(18,18,25,var(--glass-opacity))), rgba(18,18,25,calc(var(--glass-opacity) * .94)));
   box-shadow: 0 12px 35px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.09);
   backdrop-filter: blur(22px) saturate(1.25);
   -webkit-backdrop-filter: blur(22px) saturate(1.25);
   -webkit-app-region: drag;
 }
-.cover { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 10px; object-fit: cover; background: rgba(255,255,255,.08); }
+.cover { width: 44px; height: 44px; flex: 0 0 44px; border: 1px solid rgba(255,255,255,.18); border-radius: 10px; object-fit: cover; background: rgba(255,255,255,.08); box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 26%, transparent); }
 .track-info { min-width: 0; flex: 1 1 auto; align-self: stretch; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
 .track-title, .track-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .track-title { font-size: 12px; font-weight: 750; letter-spacing: -.01em; }
 .track-artist { color: rgba(255,255,255,.64); font-size: 10px; }
-.progress-track { display: block; width: 100%; height: 4px; min-height: 4px; margin-top: 2px; padding: 0; overflow: hidden; border-radius: 9px; background: rgba(255,255,255,.16); cursor: pointer; }
+.progress-track { position:relative; display: block; width: 100%; height: 5px; min-height: 5px; margin-top: 2px; padding: 0; overflow: hidden; border-radius: 9px; background: rgba(255,255,255,.17); cursor: pointer; -webkit-app-region:no-drag; }
 .progress-track:hover { background: rgba(255,255,255,.25); }
-.progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: rgba(255,255,255,.8); transition: width .28s linear; }
+.progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 58%, white), rgba(255,255,255,.96)); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent); transition: width .45s linear; }
 .controls { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; -webkit-app-region: no-drag; }
 button { display: grid; place-items: center; width: 27px; height: 30px; padding: 0; border: 0; border-radius: 9px; background: transparent; color: rgba(255,255,255,.78); font: inherit; cursor: pointer; transition: background .16s ease, color .16s ease, transform .16s ease; }
 button:hover { background: rgba(255,255,255,.1); color: #fff; transform: scale(1.06); }
 button:active { transform: scale(.93); }
-button i { font-style: normal; font-size: 18px; font-weight: 700; }
+button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .controls .play { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.92); color: #18151d; }
 .controls .play:hover { background: #fff; }
-.controls .play i { font-size: 13px; }
+.controls .play svg { width: 15px; height: 15px; stroke: none; fill: currentColor; }
+.controls .play .pause-glyph { display:none; }
+.mini-player.is-playing .controls .play .play-glyph { display:none; }
+.mini-player.is-playing .controls .play .pause-glyph { display:block; }
 .time { flex: 0 0 auto; color: rgba(255,255,255,.55); font-size: 9px; font-variant-numeric: tabular-nums; -webkit-app-region: no-drag; }
-.close { position: absolute; top: 4px; right: 5px; width: 24px; height: 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; background: rgba(10,10,14,.34); color: rgba(255,255,255,.75); font-size: 19px; line-height: 1; -webkit-app-region: no-drag; }
+.close { position: absolute; top: 4px; right: 5px; width: 24px; height: 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; background: rgba(10,10,14,.34); color: rgba(255,255,255,.75); line-height: 1; -webkit-app-region: no-drag; }
+.close svg { width:14px; height:14px; }
 .close:hover { background: rgba(255,80,90,.8); }
 body[data-size="small"] .mini-player { gap: 8px; padding-left: 8px; border-radius: 13px; }
 body[data-size="small"] .cover { width: 38px; height: 38px; flex-basis: 38px; border-radius: 8px; }
@@ -45,6 +50,7 @@ body[data-size="small"] .track-artist, body[data-size="small"] .time { font-size
 body[data-size="small"] .controls { gap: 1px; }
 body[data-size="small"] .controls button { width: 23px; height: 27px; }
 body[data-size="small"] .controls .play { width: 30px; height: 30px; }
+body[data-size="small"] .progress-track { height:4px; min-height:4px; }
 body[data-size="large"] .cover { width: 56px; height: 56px; flex-basis: 56px; }
 body[data-size="large"] .track-title { font-size: 14px; }
 body[data-size="large"] .track-artist { font-size: 11px; }
