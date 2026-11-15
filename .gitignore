@@ -1,0 +1,9 @@
+node_modules/
+dist/
+downloads/
+data/logs/
+data/sunify_users.json
+.env
+.env.*
+!.env.example
+supabase/.temp/

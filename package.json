@@ -1,0 +1,79 @@
+{
+  "name": "sunify",
+  "version": "1.0.0",
+  "description": "YouTube Music & LRCLIB Desktop Player",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron src/main/main.js",
+    "server": "node src/server.js",
+    "build:win": "electron-builder --win nsis --publish never",
+    "lint": "eslint src --ext .js",
+    "format": "prettier --write src",
+    "test": "node --test tests/*.test.js",
+    "setup:python": "python -m pip install --upgrade yt-dlp"
+  },
+  "keywords": [
+    "music",
+    "youtube-music",
+    "lrclib",
+    "spotify-alternative",
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "discord-rpc": "^4.0.1",
+    "express": "^5.2.1",
+    "node-vibrant": "^4.0.4",
+    "yt-search": "2.13.1"
+  },
+  "devDependencies": {
+    "electron": "^40.8.0",
+    "electron-builder": "^26.18.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "prettier": "^3.2.5",
+    "supabase": "^3.1.0"
+  },
+  "build": {
+    "appId": "com.sunify.desktop",
+    "productName": "Sunify",
+    "protocols": [
+      {
+        "name": "Sunify email verification",
+        "schemes": [
+          "sunify"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "data/supabase_config.json",
+      "package.json",
+      "!data/sunify_users.json",
+      "!data/logs/**",
+      "!downloads/**",
+      "!tests/**",
+      "!.git/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "Sunify-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -1,0 +1,1819 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' https: data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob: file:; media-src 'self' https: blob: file: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* http://localhost:* https:; font-src 'self' https: data:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+    <title>Sunify</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body data-theme="dark">
+    <!-- PENCERESİZ (FRAMELESS) ÖZEL BAŞLIK ÇUBUĞU -->
+    <header class="custom-titlebar">
+      <div class="titlebar-drag-region">
+        <div class="titlebar-brand">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="5" fill="#ffffff" />
+            <path
+              d="M12 2V4M12 20V22M4 12H2M22 12H20M5.64 5.64L7.05 7.05M16.95 16.95L18.36 18.36M5.64 18.36L7.05 16.95M16.95 7.05L18.36 5.64"
+              stroke="#ffffff"
+              stroke-width="2.2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span class="titlebar-title">Sunify</span>
+        </div>
+      </div>
+      <div class="titlebar-nav-arrows" aria-label="Navigation">
+        <button class="titlebar-arrow-btn" id="tbNavBack" type="button" title="Back" aria-label="Back">
+          <i class="fa-solid fa-chevron-left"></i>
+        </button>
+        <button class="titlebar-arrow-btn" id="tbNavForward" type="button" title="Forward" aria-label="Forward">
+          <i class="fa-solid fa-chevron-right"></i>
+        </button>
+      </div>
+      <div class="titlebar-window-controls">
+        <button
+          class="win-btn win-fullscreen"
+          id="winFullscreenBtn"
+          title="Tam Ekran"
+          aria-label="Tam Ekran"
+        >
+          <i class="fa-solid fa-expand" style="font-size: 10px"></i>
+        </button>
+        <button
+          class="win-btn win-minimize"
+          id="winMinimizeBtn"
+          title="Simge Durumuna Küçült"
+          aria-label="Simge Durumuna Küçült"
+        >
+          <svg width="11" height="1" viewBox="0 0 11 1">
+            <rect width="11" height="1" fill="currentColor" />
+          </svg>
+        </button>
+        <button
+          class="win-btn win-maximize"
+          id="winMaximizeBtn"
+          title="Ekranı Kapla / Geri Yükle"
+          aria-label="Ekranı Kapla"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" />
+          </svg>
+        </button>
+        <button class="win-btn win-close" id="winCloseBtn" title="Kapat" aria-label="Kapat">
+          <svg width="10" height="10" viewBox="0 0 10 10">
+            <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.2" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="app-layout">
+      <!-- SOL KENAR ÇUBUĞU (SIDEBAR) -->
+      <aside class="sidebar">
+        <div class="brand-logo" title="Sunify" id="brandLogoBtn">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="5" fill="#ffffff" />
+            <path
+              d="M12 2V4M12 20V22M4 12H2M22 12H20M5.64 5.64L7.05 7.05M16.95 16.95L18.36 18.36M5.64 18.36L7.05 16.95M16.95 7.05L18.36 5.64"
+              stroke="#ffffff"
+              stroke-width="2.2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </div>
+
+        <nav class="nav-links">
+          <button class="nav-btn active" id="navHomeBtn" title="Ana Sayfa">
+            <i class="fa-solid fa-house"></i>
+          </button>
+          <button class="nav-btn" id="navSearchTriggerBtn" title="Ara (Spotlight Panel)">
+            <i class="fa-solid fa-magnifying-glass"></i>
+          </button>
+          <button class="nav-btn" id="navLibraryBtn" title="Kitaplık">
+            <i class="fa-solid fa-book-open"></i>
+          </button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <button class="nav-btn" id="navSettingsBtn" title="Ayarlar">
+            <i class="fa-solid fa-gear"></i>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ANA İÇERİK ALANI -->
+      <main class="main-content" id="mainScrollableArea">
+        <!-- SPOTLIGHT ARAMA MODALI -->
+        <div class="inline-search-overlay" id="inlineSearchOverlay">
+          <div class="inline-search-box">
+            <div class="search-input-line">
+              <i class="fa-solid fa-magnifying-glass search-leading-icon"></i>
+              <input
+                type="text"
+                id="spotlightInput"
+                placeholder="Şarkı, sanatçı veya tür ara..."
+                autocomplete="off"
+              />
+              <button id="spotlightClearBtn" class="clear-icon-btn" title="Temizle / Kapat">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <div class="spotlight-filter-tabs" id="spotlightFilterTabs" role="tablist" aria-label="Arama türü">
+              <button type="button" class="spotlight-filter active" data-search-filter="all" role="tab" aria-selected="true">Tümü</button>
+              <button type="button" class="spotlight-filter" data-search-filter="tracks" role="tab" aria-selected="false">Şarkılar</button>
+              <button type="button" class="spotlight-filter" data-search-filter="artists" role="tab" aria-selected="false">Sanatçılar</button>
+              <button type="button" class="spotlight-filter" data-search-filter="playlists" role="tab" aria-selected="false">Çalma listeleri</button>
+            </div>
+
+            <div class="spotlight-results-card" id="spotlightResultsCard">
+              <div class="spotlight-sub-header">
+                <span id="spotlightSectionTitle">Son aramalar</span>
+                <button class="clear-history-btn" id="clearSearchHistoryBtn">Temizle</button>
+              </div>
+              <div class="spotlight-list" id="spotlightListContainer">
+                <!-- JS tarafından doldurulur -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 1. GÖRÜNÜM: ANA SAYFA (HOME) -->
+        <section id="viewHome" class="view-section active">
+          <div class="view-header">
+            <div class="header-search-bar" id="headerSearchPill">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <span>Şarkı, sanatçı veya çalma listesi ara...</span>
+              <kbd>Ctrl+K</kbd>
+            </div>
+            <div class="header-tag">
+              <span class="sunify-badge"><i class="fa-solid fa-sun"></i> Sunify Edition</span>
+            </div>
+          </div>
+
+          <!-- GÜNLÜK MİXLER (DAILY MIXES) -->
+          <div class="section-block">
+            <div
+              class="mix-title-row"
+              style="justify-content: space-between; align-items: center; margin-bottom: 18px"
+            >
+              <div style="display: flex; align-items: center; gap: 12px">
+                <span
+                  class="mix-icon-square"
+                  style="background: linear-gradient(135deg, #ec4899, #be185d)"
+                  ><i class="fa-solid fa-compact-disc" style="color: #ffffff"></i
+                ></span>
+                <div>
+                  <h2
+                    class="section-title-large"
+                    style="margin: 0; font-size: 26px; font-weight: 900"
+                  >
+                    Günlük Mixler
+                  </h2>
+                </div>
+              </div>
+              <button class="tool-btn" id="refreshMixesBtn" title="Dinleme geçmişine göre yenile">
+                <i class="fa-solid fa-rotate"></i> Yenile
+              </button>
+            </div>
+            <div class="daily-mixes-grid" id="dailyMixesGrid">
+              <!-- Günlük Mix Kartları -->
+            </div>
+            <div class="smart-mix-controls glass-panel">
+              <div><strong>Moduna göre mix</strong><span>Dinleme geçmişin ve seçtiğin havaya göre oluşturulur.</span></div>
+              <select id="smartMixMood" aria-label="Mix havası"><option value="enerjik">Enerjik</option><option value="sakin">Sakin</option><option value="odak">Odak</option><option value="favoriler">Favorilerim</option></select>
+              <button class="tool-btn" id="createSmartMixBtn"><i class="fa-solid fa-wand-magic-sparkles"></i> Mix oluştur</button>
+            </div>
+          </div>
+
+          <!-- KULLANICININ EN ÇOK DİNLEDİĞİ 10 ŞARKI -->
+          <div class="section-block">
+            <h2
+              class="section-title"
+              style="font-size: 20px; font-weight: 800; margin-bottom: 14px"
+            >
+              <i class="fa-solid fa-fire" style="color: #f43f5e; margin-right: 8px"></i> En çok
+              dinlenen şarkılar
+            </h2>
+            <div class="now-playing-dual-grid" id="nowPlayingDualGrid">
+              <!-- Dinleme sayısına göre dinamik doldurulur -->
+            </div>
+          </div>
+
+          <div class="section-block" id="homeRecommendationsSection">
+            <div class="personal-recommendations-heading"><div><h2 class="section-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Sana önerilen şarkılar</h2><p>Dinlediğin şarkıların tarzına göre</p></div><button class="tool-btn-icon" id="refreshHomeRecommendationsBtn" type="button" title="Önerileri yenile" aria-label="Önerileri yenile"><i class="fa-solid fa-rotate"></i></button></div>
+            <div class="home-recommendations-grid" id="homeRecommendationsGrid"><p class="empty-state-card">Dinleme geçmişine göre öneriler hazırlanacak.</p></div>
+          </div>          <div class="section-block" id="listeningStatsSection">
+            <h2 class="section-title" style="font-size:20px;font-weight:800;margin-bottom:14px"><i class="fa-solid fa-chart-line"></i> Dinleme özeti</h2>
+            <div class="listening-stats-grid" id="listeningStatsGrid"></div>
+          </div>
+          <!-- KALDIĞIN YERDEN DEVAM ET -->
+          <div class="section-block">
+            <h2
+              class="section-title"
+              style="font-size: 20px; font-weight: 800; margin-bottom: 14px"
+            >
+              <i class="fa-solid fa-clock-rotate-left"></i> Kaldığın yerden devam et
+            </h2>
+            <div class="cards-carousel" id="continueCards">
+              <!-- Dinlenenler -->
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. GÖRÜNÜM: ÇALMA LİSTESİ İÇ DETAY SAYFASI -->
+        <section id="viewPlaylistDetail" class="view-section">
+          <div class="playlist-header-hero">
+            <button class="back-pill-btn" id="backFromPlaylistBtn">
+              <i class="fa-solid fa-arrow-left"></i> Geri
+            </button>
+            <div class="playlist-hero-content">
+              <div class="pl-hero-cover" id="plHeroCover">
+                <img
+                  id="plHeroImg"
+                  src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300"
+                  alt="Cover"
+                />
+              </div>
+              <div class="pl-hero-meta">
+                <h1 id="plHeroTitle">7. çalma listem</h1>
+                <p class="pl-author" id="plHeroAuthor">Kadir72</p>
+                <div class="pl-stats">
+                  <span id="plHeroStats"
+                    ><i class="fa-solid fa-music"></i> 34 parça • 1 sa 46 dk</span
+                  >
+                </div>
+                <div class="pl-action-bar">
+                  <button class="play-all-pill" id="plPlayAllBtn">
+                    <i class="fa-solid fa-play"></i> Tümünü çal
+                  </button>
+                  <button class="play-all-pill playlist-save-library-btn" id="plSaveLibraryBtn" type="button" hidden>
+                    <i class="fa-solid fa-plus"></i> Kitaplığa ekle
+                  </button>
+                  <button class="icon-round-btn" id="plShuffleBtn" title="Karıştır ve Çal">
+                    <i class="fa-solid fa-shuffle"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="playlist-tools-row">
+              <div class="pl-filter-search">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="plSearchInput" placeholder="Çalma listesinde ara..." />
+              </div>
+              <div class="pl-tools-right">
+                <button class="tool-btn" id="plDownloadAllBtn">
+                  <i class="fa-solid fa-cloud-arrow-down"></i> Tümünü İndir
+                </button>
+                <button class="tool-btn" id="plAddTrackBtn">
+                  <i class="fa-solid fa-plus"></i> Şarkı Ekle
+                </button>
+                <button class="tool-btn" id="plAddToQueueBtn">
+                  <i class="fa-solid fa-list-ul"></i> Sıraya ekle
+                </button>
+                <button class="tool-btn-icon" id="plSortBtn" title="İsme Göre Sırala">
+                  <i class="fa-solid fa-arrow-down-wide-short"></i>
+                </button>
+                <button
+                  class="tool-btn-icon delete-playlist-btn"
+                  id="plDeleteBtn"
+                  title="Çalma Listesini Sil"
+                >
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+                <button class="tool-btn-icon" id="plMoreBtn" title="Daha Fazla">
+                  <i class="fa-solid fa-ellipsis"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="playlist-tracks-table" id="playlistTracksContainer"></div>
+          <section class="playlist-recommendations section-block" id="playlistRecommendationsSection">
+            <div class="playlist-recommendations-heading"><div><h2><i class="fa-solid fa-wand-magic-sparkles"></i> Bu listeye uygun şarkılar</h2><p>Listedeki parçalara göre seçildi</p></div><button class="tool-btn" id="refreshPlaylistRecommendationsBtn" type="button"><i class="fa-solid fa-rotate"></i> Yenile</button></div>
+            <div class="playlist-recommendations-grid" id="playlistRecommendationsGrid"><p class="empty-state-card">Öneriler hazırlanıyor…</p></div>
+          </section>
+        </section>
+
+        <section id="viewArtist" class="view-section artist-page-view">
+          <div class="artist-page-hero">
+            <img id="artistPageImage" class="artist-page-image" alt="Sanatçı" />
+            <div class="artist-page-meta">
+              <span class="artist-page-eyebrow"><i class="fa-solid fa-music"></i> Sanatçı</span>
+              <h1 id="artistPageName">Sanatçı</h1>
+              <p class="artist-page-listeners" id="artistPageListeners"></p>
+              <p class="artist-page-bio" id="artistPageBio"></p>
+              <button class="artist-bio-toggle" id="artistBioToggle" type="button">Tümünü göster</button>
+              <div class="artist-page-actions">
+                <button class="artist-play-btn" id="artistPlayBtn" type="button"><i class="fa-solid fa-play"></i> Çal</button>
+                <button class="artist-action-btn" id="artistShuffleBtn" type="button" title="Karıştır ve çal" aria-label="Karıştır ve çal"><i class="fa-solid fa-shuffle"></i></button>
+                <button class="artist-action-btn" id="artistSaveBtn" type="button" title="Sanatçı şarkılarını kitaplığa ekle"><i class="fa-regular fa-bookmark"></i></button>
+                <button class="artist-action-btn" id="artistShareBtn" type="button" title="Sanatçıyı paylaş"><i class="fa-solid fa-share-nodes"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="artist-content-section">
+            <div class="artist-section-heading">
+              <h2>Popüler Şarkılar</h2>
+              <button class="artist-show-all-btn" id="artistShowAllTracksBtn" type="button">Tümünü göster</button>
+            </div>
+            <div class="artist-track-list" id="artistPopularTracks"></div>
+          </div>
+
+          <div class="artist-content-section artist-albums-section">
+            <h2>Albümler</h2>
+            <div class="artist-albums-grid" id="artistAlbumsGrid"></div>
+          </div>
+        </section>
+
+        <!-- 3. GÖRÜNÜM: KİTAPLIK (TÜMÜ, ÇALMA LİSTELERİ, ALBÜMLER, SANATÇILAR ÇALIŞIYOR) -->
+        <section id="viewLibrary" class="view-section">
+          <div class="library-header">
+            <h1>Kitaplık</h1>
+            <div class="lib-actions">
+              <div class="lib-search">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="libSearchInput" placeholder="Kitaplıkta ara..." />
+              </div>
+              <div class="library-view-toggle" id="libraryViewToggle" role="group" aria-label="Library view">
+                <button class="library-view-btn active" type="button" data-library-view="grid" aria-label="Grid view" aria-pressed="true" title="Grid view">
+                  <i class="fa-solid fa-grip"></i>
+                </button>
+                <button class="library-view-btn" type="button" data-library-view="list" aria-label="List view" aria-pressed="false" title="List view">
+                  <i class="fa-solid fa-list"></i>
+                </button>
+              </div>
+              <button class="primary-pill-btn" id="openImportModalBtn">
+                <i class="fa-solid fa-plus"></i> Çalma listesi oluştur / içe aktar
+              </button>
+            </div>
+          </div>
+
+          <!-- FİLTRELEME SEKMELERİ -->
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all">Tümü</button>
+            <button class="filter-tab" data-filter="playlists">Çalma listeleri</button>
+            <button class="filter-tab" data-filter="albums">Albümler</button>
+            <button class="filter-tab" data-filter="artists">Sanatçılar</button>
+          </div>
+
+          <!-- KİTAPLIK KARTLARI (TÜMÜ TÜRKÇE VE AÇILIR DURUMDA) -->
+          <div class="library-grid" id="libraryCardsGrid">
+            <!-- JS tarafından dinamik doldurulur -->
+          </div>
+        </section>
+
+        <!-- 4. GÖRÜNÜM: AYARLAR -->
+        <section id="viewSettings" class="settings-modal-overlay">
+          <div class="settings-window">
+            <div class="settings-sidebar">
+              <div class="settings-search-wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" placeholder="Ayarlarda ara..." />
+              </div>
+
+              <div class="settings-nav-group">
+                <span class="group-label">Oynatıcı</span>
+                <button class="settings-menu-item" data-tab="playback">
+                  <i class="fa-solid fa-play"></i> Çalma
+                </button>
+                <button class="settings-menu-item" data-tab="shortcuts">
+                  <i class="fa-regular fa-keyboard"></i> Kısayollar
+                </button>
+              </div>
+
+              <div class="settings-nav-group">
+                <span class="group-label">Arayüz</span>
+                <button class="settings-menu-item active" data-tab="appearance">
+                  <i class="fa-solid fa-palette"></i> Görünüm
+                </button>
+                <button class="settings-menu-item" data-tab="overlay">
+                  <i class="fa-solid fa-table-cells-large"></i> Katman
+                </button>
+              </div>
+
+              <div class="settings-nav-group">
+                <span class="group-label">Entegrasyonlar</span>
+                <button class="settings-menu-item" data-tab="discord">
+                  <i class="fa-brands fa-discord"></i> Discord RPC
+                </button>
+              </div>
+
+              <div class="settings-nav-group">
+                <span class="group-label">Uygulama</span>
+                <button class="settings-menu-item" data-tab="account">
+                  <i class="fa-solid fa-users"></i> Hesaplar
+                </button>
+                <button class="settings-menu-item" data-tab="storage">
+                  <i class="fa-solid fa-database"></i> Önlek ve Depolama
+                </button>
+                <button class="settings-menu-item" data-tab="about">
+                  <i class="fa-solid fa-circle-info"></i> Hakkında
+                </button>
+              </div>
+
+              <div class="settings-nav-group" id="adminSettingsNav" hidden>
+                <span class="group-label">Yönetim</span>
+                <button class="settings-menu-item" data-tab="admin">
+                  <i class="fa-solid fa-shield-halved"></i> Admin Paneli
+                </button>
+              </div>
+
+              <div class="settings-nav-group">
+                <span class="group-label">Yardım</span>
+                <button class="settings-menu-item" data-tab="docs">
+                  <i class="fa-solid fa-book"></i> Belgeler
+                </button>
+                <button class="settings-menu-item" data-tab="support">
+                  <i class="fa-solid fa-circle-question"></i> Destek
+                </button>
+              </div>
+
+              <div
+                class="settings-user-profile"
+                id="settingsUserProfileBar"
+                style="cursor: pointer"
+                title="Hesap ve Bulut Ayarları"
+              >
+                <div class="user-avatar" id="settingsUserAvatar">
+                  A<span class="online-dot"></span>
+                </div>
+                <div class="user-info">
+                  <span class="user-name" id="settingsUserName">Giriş Yapılmadı</span>
+                  <span class="user-handle" id="settingsUserHandle">@misafir</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-content">
+              <button class="close-settings-x" id="closeSettingsBtn">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+
+              <!-- TAB: GÖRÜNÜM -->
+              <div class="settings-tab-pane active" id="paneAppearance">
+                <div class="pane-header">
+                  <h2>Görünüm</h2>
+                  <p>Uygulamanın genel görünümünü seç.</p>
+                </div>
+
+                <div class="settings-card">
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Dil</span>
+                      <p class="item-sub">Arayüz dilini seç</p>
+                    </div>
+                    <div class="lang-select-box">
+                      <span>🇹🇷 Türkçe</span>
+                      <i class="fa-solid fa-chevron-down"></i>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-column">
+                    <span class="item-title">Tema</span>
+                    <p class="item-sub">Uygulamanın genel görünümünü seç.</p>
+
+                    <div class="theme-options-grid">
+                      <div class="theme-card active" data-theme="dark">
+                        <div class="theme-preview preview-dark">
+                          <div class="prev-dots">
+                            <span class="dot d-red"></span><span class="dot d-yellow"></span
+                            ><span class="dot d-green"></span>
+                          </div>
+                          <div class="prev-blocks">
+                            <div class="p-block-side"></div>
+                            <div class="p-block-main"></div>
+                          </div>
+                        </div>
+                        <div class="theme-card-footer">
+                          <span>Koyu</span>
+                          <i class="fa-solid fa-circle-check check-icon"></i>
+                        </div>
+                      </div>
+
+                      <div class="theme-card" data-theme="light">
+                        <div class="theme-preview preview-light">
+                          <div class="prev-dots">
+                            <span class="dot d-red"></span><span class="dot d-yellow"></span
+                            ><span class="dot d-green"></span>
+                          </div>
+                          <div class="prev-blocks">
+                            <div class="p-block-side light"></div>
+                            <div class="p-block-main light"></div>
+                          </div>
+                        </div>
+                        <div class="theme-card-footer">
+                          <span>Açık</span>
+                          <i class="fa-solid fa-circle-check check-icon"></i>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TAB: ÇALMA -->
+              <div class="settings-tab-pane" id="panePlayback">
+                <div class="pane-header">
+                  <h2>Çalma</h2>
+                  <p>Sıra davranışı, tıklama eylemleri ve ses çıkışı.</p>
+                </div>
+
+                <div class="settings-card">
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Benzer parçaları otomatik çal</span>
+                      <p class="item-sub">
+                        Sıra bittiğinde benzer şarkıları otomatik olarak ekler.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingAutoSimilar" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Parçaya çift tıklama</span>
+                      <p class="item-sub">Bir şarkı kartına çift tıkladığında ne olacağını seç.</p>
+                    </div>
+                    <div class="pill-group" id="settingDoubleClickAction">
+                      <button class="pill-btn active" data-val="play">Hemen çal</button>
+                      <button class="pill-btn" data-val="queue">Sıraya ekle</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Varsayılan çalma bağlamı</span>
+                      <p class="item-sub">Açılışta son sırayı geri yükle veya boş başla.</p>
+                    </div>
+                    <div class="pill-group" id="settingDefaultPlayContext">
+                      <button class="pill-btn active" data-val="restore">
+                        Son sıradan devam et
+                      </button>
+                      <button class="pill-btn" data-val="empty">Boş başla</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Cihaz değişince duraklat</span>
+                      <p class="item-sub">
+                        Ses çıkış cihazı değiştiğinde çalmayı otomatik olarak duraklatır.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingPauseOnDeviceChange" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TAB: KATMAN -->
+              <div class="settings-tab-pane" id="paneOverlay">
+                <div class="pane-header">
+                  <h2>Katman</h2>
+                  <p>Masaüstü katmanı davranışı, genel kısayol ve konum ayarları.</p>
+                </div>
+
+                <div class="settings-card">
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Katmanı etkinleştir</span>
+                      <p class="item-sub">
+                        Diğer pencerelerin üstünde yüzen küçük bir oynatıcı gösterir.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingOverlayEnabled" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Katman boyutu</span>
+                      <p class="item-sub">Mini oynatıcının ekranda kaplayacağı alanı seç.</p>
+                    </div>
+                    <div class="pill-group" id="settingOverlaySize">
+                      <button class="pill-btn" data-val="small">Küçük</button>
+                      <button class="pill-btn active" data-val="medium">Orta</button>
+                      <button class="pill-btn" data-val="large">Büyük</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Konum</span>
+                      <p class="item-sub">Katmanın masaüstünde nerede görüneceğini seç.</p>
+                    </div>
+                    <div class="pill-group" id="settingOverlayPos">
+                      <button class="pill-btn" data-val="top-left">Sol üst</button>
+                      <button class="pill-btn active" data-val="top-center">Orta üst</button>
+                      <button class="pill-btn" data-val="top-right">Sağ üst</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Genel kısayol</span>
+                      <p class="item-sub">
+                        Masaüstü katmanını sistemdeki her uygulamadan aç veya kapat.
+                      </p>
+                    </div>
+                    <span class="shortcut-badge">Alt + Shift + O</span>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Simge durumunda otomatik göster</span>
+                      <p class="item-sub">
+                        Sunify simge durumuna küçültüldüğünde katmanı otomatik gösterir.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingOverlayOnMinimize" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Her zaman üstte</span>
+                      <p class="item-sub">Katmanı diğer pencerelerin üstünde tutar.</p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingOverlayAlwaysOnTop" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TAB: KISAYOLLAR -->
+              <div class="settings-tab-pane" id="paneShortcuts">
+                <div class="pane-header">
+                  <h2>Kısayollar</h2>
+                  <p>Sistem genelindeki ve oynatıcıdaki klavye kısayollarını özelleştir.</p>
+                </div>
+
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 16px;
+                  "
+                >
+                  <div class="pill-group" id="shortcutCategoryGroup">
+                    <button class="pill-btn active" data-cat="main">
+                      Ana Uygulama <span style="opacity: 0.6; margin-left: 4px">11</span>
+                    </button>
+                    <button class="pill-btn" data-cat="overlay">
+                      Katman <span style="opacity: 0.6; margin-left: 4px">9</span>
+                    </button>
+                    <button class="pill-btn" data-cat="global">
+                      Genel <span style="opacity: 0.6; margin-left: 4px">2</span>
+                    </button>
+                  </div>
+                  <div class="settings-search-wrap" style="width: 240px; margin: 0">
+                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                    <input type="text" id="shortcutSearchInput" placeholder="Kısayollarda ara..." />
+                  </div>
+                </div>
+
+                <div class="shortcut-grid-container" id="shortcutCardsGrid">
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-play shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Çal / Duraklat</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">Space</span>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-forward-step shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Sonraki parça</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <div class="shortcut-keys">
+                      <span class="shortcut-badge">Ctrl</span
+                      ><span class="shortcut-badge">Right</span>
+                    </div>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-backward-step shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Önceki parça</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <div class="shortcut-keys">
+                      <span class="shortcut-badge">Ctrl</span
+                      ><span class="shortcut-badge">Left</span>
+                    </div>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-forward shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">İleri sar (+5 sn)</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">Right</span>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-backward shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Geri sar (-5 sn)</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">Left</span>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-volume-high shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Sesi aç</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">Up</span>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-volume-low shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Sesi kıs</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">Down</span>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-volume-xmark shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Sesi kapat / aç</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">M</span>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-magnifying-glass shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Müzik ara</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">/</span>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-list-ul shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Sıra</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">Q</span>
+                  </div>
+
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-expand shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Tam ekran / Oynatıcı görünümü</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">F</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TAB: DISCORD RPC -->
+              <div class="settings-tab-pane" id="paneDiscord">
+                <div class="pane-header">
+                  <h2>Discord RPC</h2>
+                  <p>
+                    Discord'da albüm kapağı, sanatçı rozeti ve ilerleme çubuğuyla ne dinlediğinizi
+                    gösterin.
+                  </p>
+                </div>
+
+                <!-- Kullanıcı Durum Kartı -->
+                <div class="settings-card" style="margin-bottom: 16px">
+                  <div style="display: flex; align-items: center; gap: 14px; padding: 4px 0">
+                    <img
+                      src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100"
+                      id="rpcDiscordAvatar"
+                      style="width: 48px; height: 48px; border-radius: 14px; object-fit: cover"
+                      alt="Avatar"
+                    />
+                    <div>
+                      <div
+                        style="font-size: 15px; font-weight: 800; color: #fff"
+                        id="rpcDiscordUsername"
+                      >
+                        kadir123_
+                      </div>
+                      <div
+                        style="font-size: 12px; color: #4ade80; font-weight: 600"
+                        id="rpcDiscordStatus"
+                      >
+                        Hazır & Bağlı
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-card" style="margin-bottom: 20px">
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Discord Zengin Varlığı (Rich Presence)</span>
+                      <p class="item-sub">Aktif müzik çalmanızı Discord profilinizde yayınlayın.</p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingRpcMasterToggle" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <h4
+                  style="
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: rgba(255, 255, 255, 0.6);
+                    margin: 0 0 10px 4px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                  "
+                >
+                  Görüntüleme Seçenekleri
+                </h4>
+
+                <div class="settings-card" style="margin-bottom: 20px">
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Durum Formatı</span>
+                      <p class="item-sub">
+                        Discord'un 'Dinliyor...' başlığında neyin görüneceğini seçin.
+                      </p>
+                    </div>
+                    <select class="settings-select" id="settingRpcFormat">
+                      <option value="artist">Sanatçı (Varsayılan)</option>
+                      <option value="title">Şarkı Adı</option>
+                      <option value="both">Şarkı & Sanatçı</option>
+                    </select>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Çalma Zaman Çizelgesi</span>
+                      <p class="item-sub">
+                        Geçen ve kalan şarkı süresiyle etkileşimli ilerleme çubuğu gösterin.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingRpcTimeline" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Parça Görseli</span>
+                      <p class="item-sub">
+                        Discord etkinlik kartında şarkı veya albüm kapağını gösterin.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingRpcArtwork" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Sanatçı Fotoğraf Rozeti</span>
+                      <p class="item-sub">
+                        Alt köşedeki küçük dairesel rozette Sunify / Sanatçı logosunu gösterin.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingRpcArtistBadge" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Duraklatıldığında Göster</span>
+                      <p class="item-sub">
+                        Müzik duraklatıldığında Discord'da 'Duraklatıldı' göstergesiyle durumu
+                        görünür tutun.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingRpcShowPaused" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <h4
+                  style="
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: rgba(255, 255, 255, 0.6);
+                    margin: 0 0 10px 4px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                  "
+                >
+                  Profil Butonları
+                </h4>
+
+                <div class="settings-card">
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">'Sunify ile Dinle' Butonu</span>
+                      <p class="item-sub">
+                        Sunify üzerindeki şarkıya bağlanan etkileşimli bir buton ekleyin.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingRpcBtnListen" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">'Sunify İndir' Butonu</span>
+                      <p class="item-sub">
+                        Uygulamayı indirmek için bağlantı veren etkileşimli bir buton ekleyin.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingRpcBtnDownload" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TAB: ÖNBELLEK VE DEPOLAMA -->
+              <div class="settings-tab-pane" id="paneStorage">
+                <div class="pane-header">
+                  <h2>Önbellek ve Depolama</h2>
+                  <p>Depolama dağılımı, yerel önbellek istatistikleri ve medya dosyaları.</p>
+                </div>
+
+                <div class="settings-card">
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Yerel müzik klasörleri</span>
+                      <p class="item-sub">Kütüphaneye eklenecek klasörleri seçin.</p>
+                    </div>
+                    <button class="tool-btn" id="addMusicFolderBtn"><i class="fa-solid fa-folder-plus"></i> Klasör ekle</button>
+                  </div>
+                </div>
+
+                <div class="storage-summary-card">
+                  <div class="storage-number-row">
+                    <span class="storage-main-size" id="storageTotalSizeLabel">37.6</span>
+                    <span class="storage-unit">MB</span>
+                    <span class="storage-free-badge" id="storageFreeBadge">Disk alanı uygun</span>
+                  </div>
+                  <div class="storage-bar-wrap">
+                    <div class="storage-bar-fill" id="storageBarFill" style="width: 14%"></div>
+                  </div>
+                  <div class="storage-legend-row">
+                    <span class="legend-item"
+                      ><span class="dot" style="background: #ffffff"></span> Müziğiniz:
+                      <strong id="storageMusicSizeLabel" style="margin-left: 4px">0 B</strong></span
+                    >
+                    <span class="legend-item"
+                      ><span class="dot" style="background: #eab308"></span> Önbellek:
+                      <strong id="storageCacheSizeLabel" style="margin-left: 4px"
+                        >37.6 MB</strong
+                      ></span
+                    >
+                  </div>
+                </div>
+
+                <!-- İndirilenler Bölümü -->
+                <div
+                  class="downloads-heading-row"
+                >
+                  <h4
+                    style="
+                      font-size: 13px;
+                      font-weight: 800;
+                      color: rgba(255, 255, 255, 0.6);
+                      text-transform: uppercase;
+                      letter-spacing: 0.5px;
+                    "
+                  >
+                    İndirilenler
+                  </h4>
+                  <button class="tool-btn downloads-open-btn" id="btnOpenDownloadsFolder" title="İndirilenler klasörünü aç">
+                    <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+                    <span>Klasörü aç</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square downloads-open-arrow" aria-hidden="true"></i>
+                  </button>
+                </div>
+
+                <div class="settings-card" style="margin-bottom: 20px">
+                  <div class="setting-item-row">
+                    <div style="display: flex; align-items: center; gap: 14px">
+                      <div class="setting-row-icon"><i class="fa-solid fa-heart"></i></div>
+                      <div>
+                        <span class="item-title">Beğenilen Şarkılar</span>
+                        <p class="item-sub">0 şarkı • yeni beğenilenleri de otomatik indir</p>
+                      </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 14px">
+                      <span class="badge-size" id="likedSongsDownloadSize">0 B</span>
+                      <label class="toggle-switch">
+                        <input type="checkbox" id="settingDownloadLiked" />
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div style="display: flex; align-items: center; gap: 14px">
+                      <div class="setting-row-icon"><i class="fa-solid fa-file-audio"></i></div>
+                      <div>
+                        <span class="item-title">Yerel Müzik</span>
+                        <p class="item-sub">İçe aktardığınız ses dosyaları burada görünür</p>
+                      </div>
+                    </div>
+                    <span class="badge-size" id="localMusicStorageSize">0 B</span>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">İndirmeler için alan</span>
+                      <p class="item-sub" id="storageDownloadLimitDesc">
+                        Yaklaşık 1300 şarkı. Dolduğunda indirme duraklatılır.
+                      </p>
+                    </div>
+                    <div class="pill-group" id="downloadLimitGroup">
+                      <button class="pill-btn" data-limit="2">2 GB</button>
+                      <button class="pill-btn active" data-limit="5">5 GB</button>
+                      <button class="pill-btn" data-limit="20">20 GB</button>
+                      <button class="pill-btn" data-limit="0">Sınır yok</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Önbellek Bölümü -->
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin: 0 4px 10px 4px;
+                  "
+                >
+                  <h4
+                    style="
+                      font-size: 13px;
+                      font-weight: 800;
+                      color: rgba(255, 255, 255, 0.6);
+                      text-transform: uppercase;
+                      letter-spacing: 0.5px;
+                    "
+                  >
+                    Önbellek
+                  </h4>
+                  <button
+                    class="icon-btn small"
+                    id="btnOpenCacheFolder"
+                    title="Önbellek Klasörünü Aç"
+                  >
+                    <i class="fa-solid fa-folder-open"></i>
+                  </button>
+                </div>
+
+                <div class="settings-card">
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Şarkılar, sözler ve kapak görselleri</span>
+                      <p class="item-sub">Dinlerken kaydedilir. Gerektiğinde Sunify tekrar alır.</p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px">
+                      <span class="badge-size" id="cacheItemsSizeLabel">37.6 MB</span>
+                      <button
+                        class="tool-btn"
+                        id="btnClearStorageCacheBtn"
+                        style="padding: 6px 14px; font-size: 12px"
+                      >
+                        <i class="fa-solid fa-trash-can" style="margin-right: 6px"></i>Temizle
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Önbellek boyutu sınırı</span>
+                      <p class="item-sub" id="storageCacheLimitDesc">
+                        Yaklaşık 770 şarkı. En eskiler önce kaldırılır.
+                      </p>
+                    </div>
+                    <div class="pill-group" id="cacheLimitGroup">
+                      <button class="pill-btn" data-limit="1">1 GB</button>
+                      <button class="pill-btn active" data-limit="3">3 GB</button>
+                      <button class="pill-btn" data-limit="10">10 GB</button>
+                      <button class="pill-btn" data-limit="0">Sınır yok</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Önbelleğe alınan şarkıları kitaplıkta göster</span>
+                      <p class="item-sub">Kapalıyken yalnızca çevrimdışı modda görünürler.</p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingShowCachedInLibrary" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TAB: HAKKINDA -->
+              <div class="settings-tab-pane" id="paneAbout">
+                <div class="pane-header">
+                  <h2>Hakkında</h2>
+                  <p>
+                    Hece hece senkronize şarkı sözleriyle modern masaüstü müzik yayın oynatıcısı
+                  </p>
+                </div>
+
+                <!-- Büyük Hakkında Vitrin Kartı -->
+                <div class="about-hero-card">
+                  <div class="about-hero-top">
+                    <div class="about-hero-logo">
+                      <svg width="42" height="42" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="5" fill="#ffffff" />
+                        <path
+                          d="M12 2V4M12 20V22M4 12H2M22 12H20M5.64 5.64L7.05 7.05M16.95 16.95L18.36 18.36M5.64 18.36L7.05 16.95M16.95 7.05L18.36 5.64"
+                          stroke="#ffffff"
+                          stroke-width="2.4"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                      <span class="about-hero-name">Sunify</span>
+                    </div>
+                    <span class="about-version-pill"><span class="green-dot"></span> <span id="aboutVersionBadge">v1.0.0</span></span>
+                  </div>
+
+                  <div class="about-core-info" id="aboutClientVersion">
+                    Client 1.0.0 (Sunify Desktop) • Core 1.0.0 (Express & yt-dlp)
+                  </div>
+
+                  <div style="margin-top: 20px">
+                    <p class="item-sub" id="updateStatusText" style="margin: 0 0 12px 2px">
+                      Uygulama açıldığında güncellemeler otomatik denetlenir.
+                    </p>
+                    <button
+                      class="btn-primary"
+                      id="btnCheckUpdates"
+                      style="
+                        padding: 10px 24px;
+                        font-size: 14px;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
+                      "
+                    >
+                      <i class="fa-solid fa-rotate"></i> Güncellemeleri denetle
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- TAB: BELGELER -->
+              <div class="settings-tab-pane" id="paneDocs">
+                <div class="pane-header">
+                  <h2>Belgeler</h2>
+                  <p>Sunify kullanım kılavuzu ve ipuçları.</p>
+                </div>
+                <div class="settings-card">
+                  <p style="font-size: 13px; line-height: 1.7; color: #fff">
+                    Sunify, YouTube Music üzerinden kayıpsız ses akışı çeken ve LRCLIB
+                    veritabanından zaman damgalı sözleri kelime kelime senkronize eden bağımsız bir
+                    masaüstü müzik çalardır.
+                  </p>
+                </div>
+              </div>
+
+              <!-- TAB: DESTEK -->
+              <div class="settings-tab-pane" id="paneSupport">
+                <div class="pane-header">
+                  <h2>Destek</h2>
+                  <p>Geri bildirim ve hata bildirme.</p>
+                </div>
+                <div class="settings-card">
+                  <p style="font-size: 13px; line-height: 1.7; color: #fff">
+                    Sorun bildirmek ve öneride bulunmak için GitHub reposuna issues açabilirsiniz.
+                  </p>
+                </div>
+              </div>
+
+              <!-- TAB: HESAP & PROFİL -->
+              <div class="settings-tab-pane" id="paneAccount">
+                <div class="pane-header">
+                  <h2>Hesap & Profil</h2>
+                  <p>
+                    Sunify profilinizi yönetin, çalma listelerinizi ve dinleme verilerinizi
+                    eşitleyin.
+                  </p>
+                </div>
+
+                <!-- Hesap Bilgi Kartı -->
+                <div class="settings-card" id="settingsAccountCard">
+                  <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px">
+                    <div
+                      style="
+                        width: 56px;
+                        height: 56px;
+                        border-radius: 50%;
+                        background: #fff;
+                        color: #a16207;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 24px;
+                        font-weight: 800;
+                      "
+                      id="paneAccountAvatar"
+                    >
+                      A
+                    </div>
+                    <div>
+                      <h3
+                        id="paneAccountName"
+                        style="color: #ffffff; font-size: 18px; margin-bottom: 4px"
+                      >
+                        Giriş Yapılmadı
+                      </h3>
+                      <p
+                        id="paneAccountEmail"
+                        style="color: rgba(255, 255, 255, 0.7); font-size: 13px; margin: 0"
+                      >
+                        Misafir Kullanıcı
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style="display: flex; gap: 10px">
+                    <button class="btn-primary" id="btnOpenAuthGateModal" style="flex: 1">
+                      <i class="fa-solid fa-user-plus" style="margin-right: 6px"></i>Hesap Ekle / Giriş Yap
+                    </button>
+                    <button class="btn-cancel" id="btnSettingsSyncNow" style="flex: 1">
+                      <i class="fa-solid fa-rotate" style="margin-right: 6px"></i>Şimdi Eşitle
+                    </button>
+                  </div>
+                </div>
+
+                <div class="settings-card settings-account-list-card" style="margin-top: 16px">
+                  <div class="settings-account-list-heading">
+                    <div>
+                      <h3>Hesapların</h3>
+                      <p>Sunify'da kullanmak istediğin hesaba buradan geç.</p>
+                    </div>
+                    <i class="fa-solid fa-users" aria-hidden="true"></i>
+                  </div>
+                  <div id="settingsAccountProfilesList" class="settings-account-profiles-list"></div>
+                </div>
+              </div>
+
+              <div class="settings-tab-pane" id="paneAdmin">
+                <div class="pane-header">
+                  <h2>Admin Paneli</h2>
+                  <p>Kullanıcı verilerini yönetin ve GitHub Releases için Windows sürümü yayımlayın.</p>
+                </div>
+
+                <details class="admin-quick-guide">
+                  <summary><i class="fa-solid fa-circle-question"></i> Admin paneline giriş ve sürüm yayımlama adımları</summary>
+                  <div class="admin-quick-guide-body">
+                    <ol>
+                      <li>Sunify'da <strong>abdulkadirguness72@gmail.com</strong> hesabına giriş yapın. Bu Supabase hesabının e-postası doğrulanmış olmalı.</li>
+                      <li>Aşağıdaki şifre, Supabase Dashboard şifresi değil, Sunify hesabında kullandığınız hesap şifresidir.</li>
+                      <li><strong>Admin PIN</strong>, Supabase Edge Function Secrets içindeki <code>SUNIFY_ADMIN_PIN</code> değeridir. Bu değer uygulama şifrenizden ayrıdır.</li>
+                      <li>Yayın için önce kod değişikliklerini GitHub deposunun <code>main</code> dalına gönderin. Ardından sürüm numarası (ör. <code>1.0.1</code>) ve yenilikleri girip <strong>Sürümü yayımla</strong> düğmesine basın. Windows kurulumu GitHub Actions oluşturur ve Releases'e koyar.</li>
+                    </ol>
+                    <p>İlk kurulumda Supabase secrets içinde <code>SUNIFY_GITHUB_REPOSITORY</code>, <code>SUNIFY_GITHUB_TOKEN</code> ve <code>SUNIFY_GITHUB_REF</code> tanımlı olmalı; GitHub token'ında Actions yazma ve içerik okuma izni bulunmalı. Değişiklikten sonra <code>sunify-admin</code> Edge Function yeniden dağıtılmalıdır.</p>
+                  </div>
+                </details>
+
+                <div class="settings-card" id="adminLoginCard">
+                  <form id="adminLoginForm" class="admin-login-form">
+                    <label for="adminEmailInput">Admin e-posta</label>
+                    <input id="adminEmailInput" type="email" value="abdulkadirguness72@gmail.com" autocomplete="username" required />
+                    <label for="adminPasswordInput">Admin Supabase hesap şifresi</label>
+                    <input id="adminPasswordInput" type="password" autocomplete="current-password" required />
+                    <small class="admin-field-help">Bu, admin e-postasıyla uygulamaya girişte kullandığınız şifredir; Supabase Dashboard şifresi değildir.</small>
+                    <label for="adminPinInput">Admin PIN</label>
+                    <input id="adminPinInput" type="password" autocomplete="off" placeholder="Supabase SUNIFY_ADMIN_PIN secret değeri" required />
+                    <small class="admin-field-help">PIN Supabase projesinin Edge Function Secrets bölümündeki SUNIFY_ADMIN_PIN ile aynı olmalı.</small>
+                    <button class="btn-primary" id="adminLoginButton" type="submit">
+                      <i class="fa-solid fa-lock"></i> Güvenli giriş
+                    </button>
+                    <p class="item-sub" id="adminLoginStatus" role="status"></p>
+                  </form>
+                </div>
+
+                <div id="adminDashboard" hidden>
+                  <div class="settings-card admin-release-card">
+                    <div class="admin-card-heading">
+                      <div>
+                        <span class="item-title">Yeni sürüm yayımla</span>
+                        <p class="item-sub">Windows kurulum dosyasını GitHub Actions oluşturup Releases bölümüne yükler.</p>
+                      </div>
+                      <i class="fa-brands fa-github" aria-hidden="true"></i>
+                    </div>
+                    <label for="adminReleaseVersion">Sürüm (SemVer)</label>
+                    <input id="adminReleaseVersion" type="text" placeholder="1.1.0" />
+                    <label for="adminReleaseNotes">Yenilikler</label>
+                    <textarea id="adminReleaseNotes" rows="4" maxlength="5000" placeholder="Bu sürümdeki yenilikler..."></textarea>
+                    <button class="btn-primary" id="adminPublishReleaseButton" type="button">
+                      <i class="fa-solid fa-rocket"></i> Sürümü yayımla
+                    </button>
+                    <p class="item-sub" id="adminReleaseStatus" role="status"></p>
+                  </div>
+
+                  <div class="settings-card admin-users-card">
+                    <div class="admin-card-heading">
+                      <div>
+                        <span class="item-title">Supabase kullanıcıları</span>
+                        <p class="item-sub">Hesapları görüntüleyin, bir kullanıcının bulut verilerini temizleyin veya hesabı silin.</p>
+                      </div>
+                      <button class="tool-btn" id="adminRefreshUsersButton" type="button"><i class="fa-solid fa-rotate"></i> Yenile</button>
+                    </div>
+                    <div class="admin-user-layout">
+                      <div id="adminUsersList" class="admin-users-list" aria-live="polite"></div>
+                      <div class="admin-user-detail">
+                        <strong id="adminSelectedUserLabel">Bir kullanıcı seçin</strong>
+                        <pre id="adminUserDataPreview">Kullanıcı verileri burada görüntülenir.</pre>
+                        <div class="admin-user-actions">
+                          <button class="tool-btn" id="adminClearUserDataButton" type="button" disabled>Verileri temizle</button>
+                          <button class="tool-btn danger" id="adminDeleteUserButton" type="button" disabled>Hesabı sil</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <button class="tool-btn" id="adminLockButton" type="button"><i class="fa-solid fa-lock"></i> Admin panelini kilitle</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ALT OYNATICI ÇUBUĞU (LINER STYLE FLOATING COMPACT PLAYER - 4. GÖRSEL) -->
+      <footer class="bottom-player">
+        <div class="player-floating-capsule">
+          <div class="player-left">
+            <div
+              class="current-art-wrapper clickable-cover"
+              id="playerThumbWrapper"
+              title="Şarkı Sözlerini Aç"
+            >
+              <img
+                id="currentThumb"
+                src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=150"
+                alt="Kapak"
+              />
+            </div>
+            <div class="current-meta">
+              <div
+                id="currentTitle"
+                class="current-title clickable-title"
+                title="Şarkı Sözlerini Aç"
+              >
+                Müzik Çalınmıyor
+              </div>
+              <div id="currentArtist" class="current-artist">Sunify</div>
+            </div>
+            <button class="icon-btn heart-btn" id="playerLikeBtn" title="Beğen">
+              <i class="fa-regular fa-heart"></i>
+            </button>
+          </div>
+
+          <div class="player-center">
+            <button class="icon-btn" id="prevBtn" title="Önceki">
+              <i class="fa-solid fa-backward-step"></i>
+            </button>
+            <button class="play-pause-btn" id="playPauseBtn" title="Oynat / Duraklat">
+              <i class="fa-solid fa-play" id="playPauseIcon"></i>
+            </button>
+            <button class="icon-btn" id="nextBtn" title="Sonraki">
+              <i class="fa-solid fa-forward-step"></i>
+            </button>
+          </div>
+
+          <div class="player-right">
+            <button class="icon-btn small" id="shuffleBtn" title="Karıştır">
+              <i class="fa-solid fa-shuffle"></i>
+            </button>
+            <button class="icon-btn small" id="repeatBtn" title="Tekrarla">
+              <i class="fa-solid fa-repeat"></i>
+            </button>
+            <button class="icon-btn small" id="equalizerBtn" title="Ekolayzer">
+              <i class="fa-solid fa-sliders"></i>
+            </button>
+            <div class="player-audio-tool" id="equalizerWrap">
+              <div class="audio-tool-popover equalizer-popover" id="equalizerPopover" role="dialog" aria-label="Ekolayzer">
+                <div class="audio-tool-heading"><strong>Ekolayzer</strong><button class="audio-tool-close" type="button" data-close-audio-tool="equalizerPopover" aria-label="Kapat"><i class="fa-solid fa-xmark"></i></button></div>
+                <div class="eq-presets" id="equalizerPresets">
+                  <button type="button" data-eq-preset="flat" class="active">Düz</button><button type="button" data-eq-preset="bass">Bas</button><button type="button" data-eq-preset="vocal">Vokal</button><button type="button" data-eq-preset="treble">Tiz</button>
+                </div>
+                <div class="eq-bands">
+                  <label><span>60 Hz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="0"><output>0 dB</output></label>
+                  <label><span>250 Hz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="1"><output>0 dB</output></label>
+                  <label><span>1 kHz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="2"><output>0 dB</output></label>
+                  <label><span>4 kHz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="3"><output>0 dB</output></label>
+                  <label><span>12 kHz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="4"><output>0 dB</output></label>
+                </div>
+                <p class="audio-tool-status" id="equalizerStatus">Ses filtreleri hazır.</p>
+              </div>
+            </div>
+            <div class="player-audio-tool" id="audioOutputWrap">
+              <button class="icon-btn small" id="audioOutputBtn" type="button" title="Ses çıkış aygıtı" aria-label="Ses çıkış aygıtı" aria-expanded="false" aria-controls="audioOutputPopover"><i class="fa-solid fa-headphones"></i></button>
+              <div class="audio-tool-popover output-popover" id="audioOutputPopover" role="dialog" aria-label="Ses çıkış aygıtı">
+                <div class="audio-tool-heading"><strong>Ses çıkışı</strong><button class="audio-tool-close" type="button" data-close-audio-tool="audioOutputPopover" aria-label="Kapat"><i class="fa-solid fa-xmark"></i></button></div>
+                <label class="output-device-label" for="audioOutputSelect">Hoparlör veya kulaklık</label>
+                <select id="audioOutputSelect"><option value="default">Varsayılan aygıt</option></select>
+                <p class="audio-tool-status" id="audioOutputStatus">Ses aygıtları aranıyor…</p>
+              </div>
+            </div>
+            <button class="icon-btn small highlight-hover" id="openLyricsBtn" title="Şarkı Sözleri">
+              <i class="fa-solid fa-circle-play"></i>
+            </button>
+            <div class="player-volume-wrap" id="playerVolumeWrap">
+              <button class="icon-btn small" id="volumeIconBtn" title="Ses düzeyi" aria-label="Ses düzeyi" aria-expanded="false" aria-controls="playerVolumePopover">
+                <i class="fa-solid fa-volume-high" id="volumeIcon"></i>
+              </button>
+              <div class="player-volume-popover" id="playerVolumePopover">
+                <span class="player-volume-percent" id="volumePercent">80%</span>
+                <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.8" aria-label="Ses düzeyi" />
+              </div>
+            </div>
+            <button class="icon-btn small" id="queueBtn" title="Sıra">
+              <i class="fa-solid fa-expand"></i>
+            </button>
+            <button
+              class="icon-btn small"
+              id="toggleMiniPlayerBtn"
+              title="Kenar Çubuğunu Gizle / Katman"
+            >
+              <i class="fa-solid fa-bars-staggered"></i>
+            </button>
+          </div>
+          <div class="progress-bar-container player-progress" id="progressBarContainer" role="slider" aria-label="Track progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+            <div class="progress-bar-fill" id="progressBarFill"></div>
+          </div>
+        </div>
+        <span id="currentTimeLabel" style="display: none">0:00</span>
+        <span id="durationLabel" style="display: none">0:00</span>
+      </footer>
+    </div>
+
+    <div class="queue-drawer" id="queueDrawer" aria-hidden="true">
+      <div class="queue-drawer-heading"><div><h2><i class="fa-solid fa-list-ul"></i> Çalma sırası</h2><span id="queueTrackCount">0 parça</span></div><button class="icon-btn" id="closeQueueBtn" aria-label="Sırayı kapat"><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="queue-current-track" id="queueCurrentTrack"></div>
+      <div class="queue-drawer-actions"><button class="tool-btn" id="smartQueueBtn"><i class="fa-solid fa-wand-magic-sparkles"></i> Akıllı sırayı doldur</button><button class="tool-btn" id="clearQueueBtn"><i class="fa-solid fa-trash"></i> Sıradakileri temizle</button></div>
+      <div class="queue-list" id="queueList"></div>
+    </div>
+    <!-- TAM EKRAN ŞARKI SÖZÜ GÖRÜNÜMÜ -->
+    <div class="lyrics-overlay" id="lyricsOverlay" aria-label="Şarkı sözleri">
+      <div class="lyrics-backdrop" id="lyricsBackdrop"></div>
+      <header class="lyrics-topbar">
+        <div class="lyrics-view-title"><span class="lyrics-view-kicker">ŞİMDİ ÇALIYOR</span><strong id="lyricsHeaderTrackTitle">Şarkı Sözleri</strong></div>
+        <div class="lyrics-source-selector-wrap">
+          <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+          <span class="lyrics-source-label">Kaynak</span>
+          <div class="custom-source-dropdown" id="customSourceDropdown">
+            <button class="source-drop-btn" id="sourceDropBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span id="sourceSelectedText">Otomatik</span><i class="fa-solid fa-chevron-down drop-arrow" aria-hidden="true"></i>
+            </button>
+            <div class="source-menu" id="sourceMenu" role="listbox" aria-label="Şarkı sözü kaynağı">
+              <button class="source-opt active" type="button" role="option" aria-selected="true" data-val="auto">Otomatik (önerilen)</button>
+              <button class="source-opt" type="button" role="option" aria-selected="false" data-val="lrclib">LRCLIB · Senkron sözler</button>
+              <button class="source-opt" type="button" role="option" aria-selected="false" data-val="netease">Netease · Senkron sözler</button>
+              <button class="source-opt" type="button" role="option" aria-selected="false" data-val="genius">LyricsOVH · Düz sözler</button>
+            </div>
+          </div>
+          <span class="lyrics-sync-badge" id="lyricsCurrentSourceBadge"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Kaynak bekleniyor</span>
+        </div>
+        <div class="lyrics-topbar-actions">
+          <div class="lyrics-offset-wrap">
+          <button class="lyrics-offset-btn" id="lyricsOffsetTriggerBtn" type="button" title="Pozitif değer sözleri geciktirir, negatif değer erkene alır"><i class="fa-solid fa-clock" aria-hidden="true"></i><span id="lyricsOffsetLabel">0.0s</span></button>
+            <div class="lyrics-offset-popup" id="lyricsOffsetPopup">
+              <div class="offset-popup-header"><span>Söz gecikmesi</span><button class="offset-close-btn" id="offsetPopupCloseBtn" type="button" aria-label="Kapat"><i class="fa-solid fa-xmark"></i></button></div>
+              <div class="offset-value-display"><button class="offset-step-btn" id="offsetMinusStepBtn" type="button" aria-label="Gecikmeyi azalt"><i class="fa-solid fa-minus"></i></button><span class="offset-val-text" id="offsetValText">0.0s</span><button class="offset-step-btn" id="offsetPlusStepBtn" type="button" aria-label="Gecikmeyi artır"><i class="fa-solid fa-plus"></i></button></div>
+              <div class="offset-quick-presets"><button class="offset-pill-btn" data-offset="-1.0" type="button">−1s</button><button class="offset-pill-btn" data-offset="-0.5" type="button">−0.5s</button><button class="offset-pill-btn" data-offset="-0.2" type="button">−0.2s</button><button class="offset-pill-btn" data-offset="-0.1" type="button">−0.1s</button><button class="offset-pill-btn" data-offset="0.1" type="button">+0.1s</button><button class="offset-pill-btn" data-offset="0.2" type="button">+0.2s</button><button class="offset-pill-btn" data-offset="0.5" type="button">+0.5s</button><button class="offset-pill-btn" data-offset="1.0" type="button">+1s</button></div>
+              <button class="offset-reset-btn" id="offsetResetBtn" type="button">Sıfırla (0.0s)</button>
+            </div>
+          </div>
+          <button class="close-overlay-btn" id="closeLyricsBtn" type="button" title="Kapat" aria-label="Şarkı sözlerini kapat"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+      </header>
+      <main class="lyrics-content-wrap">
+        <section class="lyrics-track-showcase" aria-label="Çalan şarkı">
+          <div class="big-cover-box"><img id="lyricsBigCover" src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400" alt="Albüm kapağı" /></div>
+          <div class="lyrics-track-info"><h2 id="lyricsTrackTitle">Müzik Çalınmıyor</h2><p id="lyricsTrackArtist">Sunify</p></div>
+          <div class="lyrics-player-controls">
+            <div class="progress-bar-container lyrics-seek-bar" id="lyricsProgressContainer" role="slider" aria-label="Şarkı konumu"><div class="progress-bar-fill" id="lyricsProgressFill"></div></div>
+            <div class="time-labels"><span id="lyricsCurrentTime">0:00</span><span id="lyricsTotalTime">0:00</span></div>
+            <div class="lyrics-ctl-btns"><button class="icon-btn" id="lyricsShuffleBtn" type="button" title="Karıştır"><i class="fa-solid fa-shuffle"></i></button><button class="icon-btn" id="lyricsPrevBtn" type="button" title="Önceki"><i class="fa-solid fa-backward-step"></i></button><button class="play-pause-btn" id="lyricsPlayPauseBtn" type="button" title="Oynat / Duraklat"><i class="fa-solid fa-play"></i></button><button class="icon-btn" id="lyricsNextBtn" type="button" title="Sonraki"><i class="fa-solid fa-forward-step"></i></button><button class="icon-btn" id="lyricsRepeatBtn" type="button" title="Tekrarla"><i class="fa-solid fa-repeat"></i></button></div>
+            <div class="lyrics-volume-wrap"><i class="fa-solid fa-volume-low" aria-hidden="true"></i><input type="range" id="lyricsVolumeSlider" min="0" max="1" step="0.01" value="0.8" aria-label="Ses düzeyi" /><i class="fa-solid fa-volume-high" aria-hidden="true"></i></div>
+          </div>
+        </section>
+        <section class="lyrics-text-panel" aria-label="Şarkı sözleri">
+          <div class="lyrics-tools-bar">
+            <label class="lyrics-search-field"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input id="lyricsFilterInput" type="search" placeholder="Bulunan sözlerde ara…" aria-label="Bulunan sözlerde ara" /></label>
+            <div class="lyrics-font-tools" aria-label="Yazı boyutu"><button id="lyricsFontDownBtn" type="button" title="Yazıyı küçült" aria-label="Yazıyı küçült">A−</button><button id="lyricsFontUpBtn" type="button" title="Yazıyı büyüt" aria-label="Yazıyı büyüt">A+</button></div>
+          </div>
+          <div class="lyrics-lines-container" id="lyricsLinesContainer" aria-live="polite"><div class="lyrics-state-card"><i class="fa-solid fa-spinner fa-spin"></i><span>Sözler aranıyor…</span></div></div>
+        </section>
+      </main>
+    </div>
+    <!-- ÇALMA LİSTESİ İÇE AKTAR / SIFIRDAN OLUŞTUR MODAL -->
+    <div class="modal-overlay" id="importModal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-row">
+            <span class="modal-title-icon"><i class="fa-solid fa-arrow-down-to-bracket"></i></span>
+            <h2 id="importModalTitle">Çalma listesi içe aktar</h2>
+          </div>
+          <p class="modal-sub" id="importModalSub">
+            Spotify veya YouTube'daki mevcut bir çalma listesini içe aktar
+          </p>
+        </div>
+
+        <div class="modal-tabs">
+          <button class="modal-tab" id="tabScratch">Sıfırdan</button>
+          <button class="modal-tab active" id="tabImport">İçe aktar</button>
+        </div>
+
+        <!-- İçe Aktar Görünümü -->
+        <div id="tabImportContent">
+          <div class="modal-input-wrap">
+            <i class="fa-solid fa-link input-icon"></i>
+            <input
+              type="text"
+              id="importUrlInput"
+              placeholder="Bağlantı yapıştır... (Spotify / YouTube)"
+            />
+            <i
+              class="fa-solid fa-circle-info info-icon"
+              title="Spotify veya YouTube çalma listesi bağlantısı desteklenir"
+            ></i>
+          </div>
+        </div>
+
+        <!-- Sıfırdan Oluştur Görünümü -->
+        <div id="tabScratchContent" style="display: none">
+          <div class="modal-field-group">
+            <label>Çalma Listesi Adı</label>
+            <div class="modal-input-wrap">
+              <i class="fa-solid fa-music input-icon"></i>
+              <input
+                type="text"
+                id="scratchPlaylistNameInput"
+                placeholder="Örn: Favori Şarkılarım, Gece Yolculuğu..."
+              />
+            </div>
+          </div>
+          <div class="modal-field-group">
+            <label>Kapak Resmi URL (Opsiyonel)</label>
+            <div class="modal-input-wrap">
+              <i class="fa-solid fa-image input-icon"></i>
+              <input
+                type="text"
+                id="scratchPlaylistCoverInput"
+                placeholder="https://images.unsplash.com/..."
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-cancel" id="closeImportModalBtn">İptal</button>
+          <button class="btn-primary" id="confirmImportBtn">İçe aktar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ŞARKI EKLE MODAL -->
+    <div class="modal-overlay" id="addTrackModal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>Listeye Şarkı Ekle</h2>
+          <p class="modal-sub">Şarkı veya sanatçı adı aratarak doğrudan listeye ekleyin</p>
+        </div>
+        <div class="modal-input-wrap">
+          <i class="fa-solid fa-magnifying-glass input-icon"></i>
+          <input type="text" id="addTrackSearchInput" placeholder="Şarkı veya sanatçı adı ara..." />
+        </div>
+        <div class="add-track-results" id="addTrackResultsContainer">
+          <!-- Arama sonuçları listesi -->
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" id="closeAddTrackModalBtn">Kapat</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ŞARKI DÜZENLEME MODAL (METADATA EDITOR) -->
+    <div class="modal-overlay" id="editTrackModal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>Şarkıyı Düzenle</h2>
+          <p class="modal-sub">Şarkı adı, sanatçı ve kapak resmini özelleştirin</p>
+        </div>
+        <div class="modal-field-group">
+          <label>Şarkı Başlığı</label>
+          <div class="modal-input-wrap">
+            <input type="text" id="editTrackTitleInput" placeholder="Şarkı Adı" />
+          </div>
+        </div>
+        <div class="modal-field-group">
+          <label>Sanatçı</label>
+          <div class="modal-input-wrap">
+            <input type="text" id="editTrackArtistInput" placeholder="Sanatçı Adı" />
+          </div>
+        </div>
+        <div class="modal-field-group">
+          <label>Albüm Kapak URL</label>
+          <div class="modal-input-wrap">
+            <input
+              type="text"
+              id="editTrackCoverInput"
+              placeholder="Görsel bağlantısı (https://...)"
+            />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" id="closeEditTrackModalBtn">İptal</button>
+          <button class="btn-primary" id="saveEditTrackBtn">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAM EKRAN ZORUNLU GİRİŞ / KAYIT EKRANI (AUTH GATE) -->
+    <div class="auth-fullscreen-gate" id="authFullscreenGate">
+      <div class="auth-gate-box">
+        <div class="auth-gate-brand">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="5" fill="#fde047" />
+            <path
+              d="M12 2V4M12 20V22M4 12H2M22 12H20M5.64 5.64L7.05 7.05M16.95 16.95L18.36 18.36M5.64 18.36L7.05 16.95M16.95 7.05L18.36 5.64"
+              stroke="#fde047"
+              stroke-width="2.4"
+              stroke-linecap="round"
+            />
+          </svg>
+          <h2>Sunify'a Hoş Geldin</h2>
+          <p>
+            Müzik kütüphanene, akıllı mikslerine ve listelerine ulaşmak için hesabına giriş yap.
+          </p>
+        </div>
+
+        <div class="auth-gate-tabs">
+          <button class="auth-gate-tab active" id="authGateTabLogin" type="button">Giriş Yap</button>
+          <button class="auth-gate-tab" id="authGateTabRegister" type="button">Kayıt Ol</button>
+        </div>
+
+        <!-- Giriş Formu -->
+        <form id="authGateLoginForm">
+          <div class="modal-field-group">
+            <label>E-Posta Adresi</label>
+            <div class="modal-input-wrap">
+              <i class="fa-regular fa-envelope auth-field-icon" aria-hidden="true"></i>
+              <input type="email" id="gateLoginEmail" placeholder="ornek@email.com" required />
+            </div>
+          </div>
+          <div class="modal-field-group">
+            <label>Şifre</label>
+            <div class="modal-input-wrap">
+              <i class="fa-solid fa-lock auth-field-icon" aria-hidden="true"></i>
+              <input type="password" id="gateLoginPass" placeholder="••••••••" required />
+              <button class="auth-password-toggle" type="button" data-password-target="gateLoginPass" aria-label="Şifreyi göster" aria-pressed="false" title="Şifreyi göster">
+                <i class="fa-regular fa-eye" aria-hidden="true"></i>
+              </button>
+            </div>
+            <p class="auth-caps-warning" id="gateLoginCapsWarning" role="status" aria-live="polite" hidden><i class="fa-solid fa-lock" aria-hidden="true"></i> Caps Lock açık</p>
+          </div>
+          <button
+            class="btn-primary"
+            id="btnGateDoLogin"
+            type="submit"
+            style="width: 100%; margin-top: 14px; padding: 14px; font-size: 15px"
+          >
+            Giriş Yap
+          </button>
+          <p class="auth-login-status" id="authGateLoginStatus" role="status" aria-live="polite" hidden></p>
+        </form>
+
+        <!-- Kayıt Formu -->
+        <form id="authGateRegisterForm" style="display: none" onsubmit="return false;">
+          <div class="modal-field-group">
+            <label>Kullanıcı Adı</label>
+            <div class="modal-input-wrap">
+              <i class="fa-regular fa-user auth-field-icon" aria-hidden="true"></i>
+              <input type="text" id="gateRegUsername" placeholder="Kadir" required />
+            </div>
+          </div>
+          <div class="modal-field-group">
+            <label>E-Posta Adresi</label>
+            <div class="modal-input-wrap">
+              <i class="fa-regular fa-envelope auth-field-icon" aria-hidden="true"></i>
+              <input type="email" id="gateRegEmail" placeholder="ornek@email.com" required />
+            </div>
+          </div>
+          <div class="modal-field-group">
+            <label>Şifre</label>
+            <div class="modal-input-wrap">
+              <i class="fa-solid fa-lock auth-field-icon" aria-hidden="true"></i>
+              <input type="password" id="gateRegPass" placeholder="En az 6 karakter" required />
+              <button class="auth-password-toggle" type="button" data-password-target="gateRegPass" aria-label="Şifreyi göster" aria-pressed="false" title="Şifreyi göster">
+                <i class="fa-regular fa-eye" aria-hidden="true"></i>
+              </button>
+            </div>
+            <p class="auth-caps-warning" id="gateRegCapsWarning" role="status" aria-live="polite" hidden><i class="fa-solid fa-lock" aria-hidden="true"></i> Caps Lock açık</p>
+          </div>
+          <button
+            class="btn-primary"
+            id="btnGateDoRegister"
+            type="button"
+            style="width: 100%; margin-top: 14px; padding: 14px; font-size: 15px"
+          >
+            Kayıt Ol ve Başla
+          </button>
+        </form>
+
+        <button class="auth-gate-guest" id="authGateTabGuest" type="button">
+          Misafir olarak devam et <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- UYGULAMA İÇİ BİLDİRİM TOAST BİLEŞENİ -->
+    <div class="sunify-toast" id="sunifyToast">
+      <div class="toast-icon-wrap" id="toastIcon"><i class="fa-solid fa-circle-check"></i></div>
+      <div class="toast-body">
+        <div class="toast-title" id="toastTitle">Bildirim</div>
+        <div class="toast-msg" id="toastMsg">İşlem başarıyla tamamlandı.</div>
+      </div>
+    </div>
+
+    <audio id="audioPlayer"></audio>
+    <script src="renderer.js"></script>
+  </body>
+</html>
+
+
+

@@ -1,0 +1,56 @@
+name: Publish Sunify Windows Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer version, such as 1.1.0
+        required: true
+        type: string
+      notes:
+        description: Release notes shown in Sunify
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set release version and repository metadata
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw 'Version must use SemVer, for example 1.1.0.' }
+          npm version --no-git-tag-version $env:RELEASE_VERSION
+          @{ repository = $env:RELEASE_REPOSITORY } | ConvertTo-Json | Set-Content -Encoding utf8NoBOM src/build-info.json
+
+      - name: Build Windows installer
+        run: npm run build:win
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Sunify v${{ inputs.version }}
+          body: ${{ inputs.notes }}
+          files: dist/Sunify-Setup-${{ inputs.version }}.exe
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

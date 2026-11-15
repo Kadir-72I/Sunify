@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data:; style-src 'self'; img-src 'self' https: data:; script-src 'self'; object-src 'none'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sunify Mini Oynatıcı</title>
+    <link rel="stylesheet" href="mini-player.css" />
+  </head>
+  <body data-size="medium">
+    <main class="mini-player" aria-label="Sunify mini oynatıcı">
+      <img class="cover" id="cover" alt="Albüm kapağı" />
+      <div class="track-info">
+        <div class="track-title" id="title">Sunify</div>
+        <div class="track-artist" id="artist">Bir şarkı seç</div>
+        <button class="progress-track" id="seek-track" type="button" title="Şarkıda ilerle" aria-label="Şarkıda ilerle"><span id="progress"></span></button>
+      </div>
+      <div class="controls">
+        <button type="button" data-action="previous" title="Önceki" aria-label="Önceki"><i class="fa-solid fa-backward-step">‹</i></button>
+        <button class="play" type="button" data-action="toggle" title="Çal / Duraklat" aria-label="Çal veya duraklat"><i id="play-icon">▶</i></button>
+        <button type="button" data-action="next" title="Sonraki" aria-label="Sonraki"><i class="fa-solid fa-forward-step">›</i></button>
+      </div>
+      <div class="time" id="time">0:00 / 0:00</div>
+      <button class="close" type="button" data-action="close" title="Katmanı kapat" aria-label="Katmanı kapat">×</button>
+    </main>
+    <script src="mini-player.js"></script>
+  </body>
+</html>
