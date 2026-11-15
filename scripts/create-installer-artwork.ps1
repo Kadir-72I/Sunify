@@ -1,13 +1,5 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class SunifyNativeIcon {
-  [DllImport("user32.dll", SetLastError = true)]
-  public static extern bool DestroyIcon(IntPtr hIcon);
-}
-'@
 
 $root = Split-Path -Parent $PSScriptRoot
 $build = Join-Path $root 'build'
@@ -35,30 +27,55 @@ function Draw-SunMark($Graphics, [float]$CenterX, [float]$CenterY, [float]$Radiu
   $brush.Dispose()
 }
 
-# App and installer icon: warm violet/magenta sunmark on a rounded dark-violet tile.
-$iconBitmap = New-RgbBitmap 256 256
-$graphics = [System.Drawing.Graphics]::FromImage($iconBitmap)
-$graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-$graphics.Clear([System.Drawing.Color]::FromArgb(16, 14, 25))
-$tile = [System.Drawing.Drawing2D.GraphicsPath]::new()
-$diameter = 224.0; $left = 16.0; $top = 16.0; $corner = 48.0
-$tile.AddArc($left, $top, $corner, $corner, 180, 90)
-$tile.AddArc($left + $diameter - $corner, $top, $corner, $corner, 270, 90)
-$tile.AddArc($left + $diameter - $corner, $top + $diameter - $corner, $corner, $corner, 0, 90)
-$tile.AddArc($left, $top + $diameter - $corner, $corner, $corner, 90, 90)
-$tile.CloseFigure()
-$tileBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new([System.Drawing.Point]::new(18, 20), [System.Drawing.Point]::new(236, 238), [System.Drawing.Color]::FromArgb(196, 65, 206), [System.Drawing.Color]::FromArgb(97, 74, 232))
-$graphics.FillPath($tileBrush, $tile)
-Draw-SunMark $graphics 128 128 39 ([System.Drawing.Color]::White) ([System.Drawing.Color]::White) 8
-$iconPath = Join-Path $build 'sunify.ico'
-$iconHandle = $iconBitmap.GetHicon()
+# App, shortcut, and setup icon: use the exact artwork supplied for Sunify.
+$iconSourcePath = Join-Path $build 'sunify-icon-source.png'
+if (-not (Test-Path -LiteralPath $iconSourcePath)) { throw "Sunify icon artwork was not found: $iconSourcePath" }
+$iconSource = [System.Drawing.Image]::FromFile($iconSourcePath)
+$iconSizes = @(256, 128, 64, 48, 32, 16)
+$iconImages = @()
 try {
-  $icon = [System.Drawing.Icon]::FromHandle($iconHandle)
-  $stream = [System.IO.File]::Create($iconPath)
-  try { $icon.Save($stream) } finally { $stream.Dispose(); $icon.Dispose() }
+  foreach ($size in $iconSizes) {
+    $bitmap = [System.Drawing.Bitmap]::new($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $imageGraphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $imageGraphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $imageGraphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+    $imageGraphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $imageGraphics.DrawImage($iconSource, 0, 0, $size, $size)
+    $imageGraphics.Dispose()
+    $pngStream = [System.IO.MemoryStream]::new()
+    $bitmap.Save($pngStream, [System.Drawing.Imaging.ImageFormat]::Png)
+    $iconImages += ,@{ Size = $size; Data = $pngStream.ToArray() }
+    $pngStream.Dispose()
+    $bitmap.Dispose()
+  }
+
+  $iconPath = Join-Path $build 'sunify.ico'
+  $iconStream = [System.IO.File]::Create($iconPath)
+  $writer = [System.IO.BinaryWriter]::new($iconStream)
+  try {
+    $writer.Write([UInt16]0)
+    $writer.Write([UInt16]1)
+    $writer.Write([UInt16]$iconImages.Count)
+    $dataOffset = 6 + (16 * $iconImages.Count)
+    foreach ($entry in $iconImages) {
+      $dimension = if ($entry.Size -eq 256) { [byte]0 } else { [byte]$entry.Size }
+      $writer.Write($dimension)
+      $writer.Write($dimension)
+      $writer.Write([byte]0)
+      $writer.Write([byte]0)
+      $writer.Write([UInt16]1)
+      $writer.Write([UInt16]32)
+      $writer.Write([UInt32]$entry.Data.Length)
+      $writer.Write([UInt32]$dataOffset)
+      $dataOffset += $entry.Data.Length
+    }
+    foreach ($entry in $iconImages) { $writer.Write([byte[]]$entry.Data) }
+  } finally {
+    $writer.Dispose()
+    $iconStream.Dispose()
+  }
 } finally {
-  [SunifyNativeIcon]::DestroyIcon($iconHandle) | Out-Null
-  $tileBrush.Dispose(); $tile.Dispose(); $graphics.Dispose(); $iconBitmap.Dispose()
+  $iconSource.Dispose()
 }
 
 # NSIS wizard sidebar artwork.
