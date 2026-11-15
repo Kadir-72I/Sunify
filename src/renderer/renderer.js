@@ -338,6 +338,7 @@ let activeLibraryFilter = 'all';
 // KAPSAMLI DİNLEME VERİLERİ (Analytics: Dinleme sayısı, süresi, günleri, playlist sayıları)
 let trackAnalytics = readAccountJson('sunify_track_analytics', {}, currentAuthSession, true);
 let globalTopTracks = [];
+let globalChartUnavailable = false;
 
 function trackSongStartEvent(track) {
   if (!track || !track.title) return;
@@ -380,8 +381,17 @@ function trackSongStartEvent(track) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ track: { id: sharedTrackId, title: track.title, artist: track.artist || '', thumbnail: track.thumbnail || '' } }),
   }).then((response) => {
-    if (response.ok) refreshGlobalTopTracks();
-  }).catch(() => {});
+    if (!response.ok) {
+      globalChartUnavailable = true;
+      renderNowPlayingDualGrid();
+      return;
+    }
+    globalChartUnavailable = false;
+    refreshGlobalTopTracks();
+  }).catch(() => {
+    globalChartUnavailable = true;
+    renderNowPlayingDualGrid();
+  });
   renderDailyMixes();
   renderNowPlayingDualGrid();
   renderListeningStats();
@@ -1522,7 +1532,10 @@ function renderNowPlayingDualGrid() {
 
   const tracks = globalTopTracks;
   if (!tracks.length) {
-    container.innerHTML = '<p class="empty-state-card">Sunify kullanıcılarının ortak listesi, yeterli toplu dinleme verisi oluştuğunda burada görünür.</p>';
+    const message = globalChartUnavailable
+      ? 'Ortak dinleme listesi şu an yüklenemiyor. Supabase bağlantısını ve global dinleme listesi veritabanı kurulumunu kontrol edin.'
+      : 'Henüz ortak dinleme kaydı yok. Çalınan ilk şarkılar burada görünür; az kullanıcı olması listeyi engellemez.';
+    container.replaceChildren(Object.assign(document.createElement('p'), { className: 'empty-state-card', textContent: message }));
     return;
   }
 
@@ -1561,6 +1574,7 @@ async function refreshGlobalTopTracks() {
   try {
     const response = await fetch(`${API_BASE}/discover/top?limit=10`);
     const result = await response.json();
+    globalChartUnavailable = !response.ok || Boolean(result.unavailable);
     globalTopTracks = Array.isArray(result.tracks) ? result.tracks.map((track) => ({
       ...track,
       id: track.track_id || track.id,
@@ -1573,6 +1587,7 @@ async function refreshGlobalTopTracks() {
     })) : [];
   } catch (error) {
     globalTopTracks = [];
+    globalChartUnavailable = true;
   }
   renderNowPlayingDualGrid();
 }

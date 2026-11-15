@@ -45,7 +45,7 @@ set search_path = public
 as $$
   select p.track_id, p.title, p.artist, p.thumbnail, p.play_count
   from public.sunify_global_plays p
-  where p.play_count >= 3
+  where p.play_count >= 1
   order by p.play_count desc, p.updated_at desc
   limit least(greatest(coalesce(result_limit, 10), 1), 20);
 $$;

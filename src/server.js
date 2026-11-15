@@ -221,7 +221,7 @@ app.post('/api/discover/play', async (req, res) => {
 app.get('/api/discover/top', async (req, res) => {
   const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
   const supabase = getSupabase();
-  if (!supabase) return res.json({ tracks: [] });
+  if (!supabase) return res.json({ tracks: [], unavailable: true });
   try {
     const { data, error } = await supabase.rpc('get_sunify_global_top', { result_limit: limit });
     if (error) throw error;
