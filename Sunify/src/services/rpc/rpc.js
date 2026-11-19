@@ -218,10 +218,10 @@ function updatePresence(data) {
 
   const buttons = [];
   if (settings.buttonListen !== false) {
-    buttons.push({ label: '🎵 Şarkıyı Dinle', url: listenTargetUrl });
+    buttons.push({ label: "🎵 Sunify'da Dinle", url: listenTargetUrl });
   }
   if (settings.buttonDownload !== false) {
-    buttons.push({ label: '✨ Sunify İndir', url: 'https://github.com/Kadir-72I/Sunify/releases/latest' });
+    buttons.push({ label: "✨ Sunify'ı İndir", url: 'https://github.com/Kadir-72I/Sunify/releases/latest' });
   }
 
   const durationBadge = safeDuration > 0 ? ` [${formatRpcClock(safePosition)} / ${formatRpcClock(safeDuration)}]` : '';

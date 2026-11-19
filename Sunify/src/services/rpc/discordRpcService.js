@@ -122,8 +122,8 @@ function updateDiscordPresence(track, position = 0, duration = 0, isPlaying = tr
       small_text: isPlaying ? '▶ Sunify Desktop • Şimdi Çalıyor' : '⏸ Duraklatıldı',
     },
     buttons: [
-      { label: '🎵 Şarkıyı Dinle', url: listenUrl },
-      { label: '✨ Sunify İndir', url: 'https://github.com/Kadir-72I/Sunify/releases/latest' },
+      { label: "🎵 Sunify'da Dinle", url: listenUrl },
+      { label: "✨ Sunify'ı İndir", url: 'https://github.com/Kadir-72I/Sunify/releases/latest' },
     ],
   };
 
