@@ -218,6 +218,16 @@ class YouTubeAudioService(private val context: Context) {
         return false
     }
 
+    private data class Seed(val title: String, val artist: String, val duration: Long, val weight: Int)
+
+    private data class Candidate(
+        val track: TrackItem,
+        var score: Double,
+        val artistKey: String,
+        var reason: String,
+        val matchedSeeds: MutableSet<Int>
+    )
+
     fun getRecommendations(
         seedsJson: String?,
         query: String?,
@@ -226,7 +236,6 @@ class YouTubeAudioService(private val context: Context) {
         forceRefresh: Boolean
     ): List<TrackItem> {
         val mode = if (modeParam in setOf("all", "similar", "discovery", "energetic", "chill")) modeParam!! else "all"
-        data class Seed(val title: String, val artist: String, val duration: Long, val weight: Int)
         val seeds = mutableListOf<Seed>()
         if (!seedsJson.isNullOrBlank()) {
             val arr = JSONArray(seedsJson)
@@ -261,14 +270,6 @@ class YouTubeAudioService(private val context: Context) {
             }
         }
         val seedArtists = seeds.map { normalizeRecText(it.artist) }.filter { it.isNotEmpty() }.toSet()
-
-        data class Candidate(
-            val track: TrackItem,
-            var score: Double,
-            val artistKey: String,
-            var reason: String,
-            val matchedSeeds: MutableSet<Int>
-        )
 
         val candidates = linkedMapOf<String, Candidate>()
         seeds.forEachIndexed { seedIdx, seed ->
