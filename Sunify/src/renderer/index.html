@@ -185,8 +185,11 @@
 
           <!-- DİNLEME ÖZETİ -->
           <section class="hm-section" id="listeningStatsSection">
-            <div class="hm-head">
-              <h2><i class="fa-solid fa-chart-line"></i> Dinleme özeti</h2>
+            <div class="hm-head hm-head-with-action">
+              <div class="hm-title-action-group">
+                <h2><i class="fa-solid fa-chart-line"></i> Dinleme özeti</h2>
+                <button class="hm-btn" id="openWrappedModalBtn" type="button" title="Kişisel dinleme özetini görüntüle"><i class="fa-solid fa-sparkles"></i> Sunify Özeti</button>
+              </div>
             </div>
             <div class="hm-stats" id="listeningStatsGrid"></div>
           </section>
@@ -527,6 +530,78 @@
                     </div>
                     <label class="toggle-switch">
                       <input type="checkbox" id="settingPauseOnDeviceChange" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Yumuşak geçiş (Crossfade)</span>
+                      <p class="item-sub">
+                        Şarkı biterken sesi yumuşakça kısıp sıradaki parçaya kesintisiz geçer.
+                      </p>
+                    </div>
+                    <div class="pill-group" id="settingCrossfadeSeconds">
+                      <button class="pill-btn active" data-val="0">Kapalı</button>
+                      <button class="pill-btn" data-val="3">3 sn</button>
+                      <button class="pill-btn" data-val="5">5 sn</button>
+                      <button class="pill-btn" data-val="8">8 sn</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Oynatma hızı</span>
+                      <p class="item-sub">
+                        Şarkıların çalma hızını seçin (Nightcore / Slowed veya standart hız).
+                      </p>
+                    </div>
+                    <div class="pill-group" id="settingPlaybackSpeed">
+                      <button class="pill-btn" data-val="0.85">0.85x</button>
+                      <button class="pill-btn active" data-val="1">1x</button>
+                      <button class="pill-btn" data-val="1.15">1.15x</button>
+                      <button class="pill-btn" data-val="1.25">1.25x</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Ses seviyesi dengeleme (Loudness Normalization)</span>
+                      <p class="item-sub">
+                        Yüksek ve kısık sesli kayıtları dinamik sıkıştırmayla dengeli seviyede tutar.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingAudioNormalize" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Uyku zamanlayıcısı</span>
+                      <p class="item-sub" id="sleepTimerStatusText">
+                        Belirlenen süre sonunda müziği otomatik olarak durdurur.
+                      </p>
+                    </div>
+                    <div class="pill-group" id="settingSleepTimer">
+                      <button class="pill-btn active" data-val="0">Kapalı</button>
+                      <button class="pill-btn" data-val="15">15 dk</button>
+                      <button class="pill-btn" data-val="30">30 dk</button>
+                      <button class="pill-btn" data-val="60">60 dk</button>
+                      <button class="pill-btn" data-val="end">Şarkı sonu</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item-row">
+                    <div>
+                      <span class="item-title">Kapatınca sistem tepsisine küçült</span>
+                      <p class="item-sub">
+                        Pencere kapatıldığında Sunify sistem tepsisinde arka planda çalmaya devam eder.
+                      </p>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="settingCloseToTray" checked />
                       <span class="toggle-slider"></span>
                     </label>
                   </div>
@@ -1648,6 +1723,23 @@
         </div>
         <div class="modal-actions">
           <button class="btn-cancel" id="closeAddTrackModalBtn">Kapat</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ŞARKI DÜZENLEME MODAL (METADATA EDITOR) -->
+    <div class="modal-overlay" id="wrappedModal" aria-label="Sunify Dinleme Özeti">
+      <div class="modal-card" style="max-width: 540px">
+        <div class="modal-header">
+          <div class="modal-title-row">
+            <span class="modal-title-icon"><i class="fa-solid fa-chart-pie" aria-hidden="true"></i></span>
+            <h2>Sunify Dinleme Özeti</h2>
+          </div>
+          <p class="modal-sub">Sonuna kadar dinlediğin parçalar ve kişisel müzik istatistiklerin</p>
+        </div>
+        <div id="wrappedModalBody" style="display: flex; flex-direction: column; gap: 14px; margin: 12px 0"></div>
+        <div class="modal-actions">
+          <button class="btn-cancel" id="closeWrappedModalBtn" type="button">Kapat</button>
         </div>
       </div>
     </div>

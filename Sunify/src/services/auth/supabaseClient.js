@@ -14,6 +14,7 @@ let currentConfig = {
 
 // Kayıtlı config varsa yükle
 function loadConfig() {
+  if (process.env.SUNIFY_DISABLE_SUPABASE === '1') return;
   try {
     const sourceFile = fs.existsSync(CONFIG_FILE) ? CONFIG_FILE : BUNDLED_CONFIG_FILE;
     if (fs.existsSync(sourceFile)) {

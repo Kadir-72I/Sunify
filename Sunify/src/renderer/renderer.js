@@ -440,11 +440,32 @@ const dailyMixCache = new Map();
 const dailyMixInFlight = new Map();
 let dailyMixRenderRequest = 0;
 
-function trackSongStartEvent(track) {
-  if (!track || !track.title) return;
-  const key = `${track.artist || ''} - ${track.title}`.trim().toLowerCase();
-  const dayName = new Intl.DateTimeFormat('tr-TR', { weekday: 'long' }).format(new Date());
+// Dinleme sayısı sürüm 2: sayaç yalnızca şarkı atlanmadan sonuna kadar
+// dinlendiğinde artar. Eski (her tıklamada artan) sayılar bir kez sıfırlanır;
+// bu işaret buluttan gelen eski verilere de uygulanır.
+const LISTEN_COUNT_VERSION = 2;
+function migrateListenCounts(analytics) {
+  if (!analytics || typeof analytics !== 'object') return { analytics: {}, changed: false };
+  let changed = false;
+  Object.values(analytics).forEach((entry) => {
+    if (!entry || typeof entry !== 'object' || entry.countVersion === LISTEN_COUNT_VERSION) return;
+    entry.playCount = 0;
+    entry.totalSeconds = 0;
+    entry.days = [];
+    entry.countVersion = LISTEN_COUNT_VERSION;
+    changed = true;
+  });
+  return { analytics, changed };
+}
+function applyListenCountMigration() {
+  const result = migrateListenCounts(trackAnalytics);
+  trackAnalytics = result.analytics;
+  if (result.changed) writeAccountJson('sunify_track_analytics', trackAnalytics);
+}
+applyListenCountMigration();
 
+function ensureTrackAnalyticsEntry(track) {
+  const key = `${track.artist || ''} - ${track.title}`.trim().toLowerCase();
   if (!trackAnalytics[key]) {
     trackAnalytics[key] = {
       title: track.title,
@@ -454,10 +475,31 @@ function trackSongStartEvent(track) {
       days: [],
       inPlaylistsCount: 0,
       lastPlayed: new Date().toISOString(),
+      countVersion: LISTEN_COUNT_VERSION,
     };
   }
+  return key;
+}
 
-  trackAnalytics[key].playCount += 1;
+// Şarkı başladığında: yalnızca "son çalınan" bilgisini günceller, sayaç artmaz.
+function trackSongStartEvent(track) {
+  if (!track || !track.title) return;
+  const key = ensureTrackAnalyticsEntry(track);
+  trackAnalytics[key].lastPlayed = new Date().toISOString();
+  trackAnalytics[key].thumbnail = track.thumbnail || trackAnalytics[key].thumbnail || '';
+  trackAnalytics[key].duration = Number(track.duration) || trackAnalytics[key].duration || 0;
+  trackAnalytics[key].id = track.id || trackAnalytics[key].id || '';
+  trackAnalytics[key].query = track.query || trackAnalytics[key].query || '';
+  writeAccountJson('sunify_track_analytics', trackAnalytics);
+}
+
+// Şarkı atlanmadan sonuna kadar dinlendiğinde çağrılır: dinleme sayısını artırır.
+function trackSongCompletedEvent(track) {
+  if (!track || !track.title) return;
+  const key = ensureTrackAnalyticsEntry(track);
+  const dayName = new Intl.DateTimeFormat('tr-TR', { weekday: 'long' }).format(new Date());
+
+  trackAnalytics[key].playCount = (Number(trackAnalytics[key].playCount) || 0) + 1;
   trackAnalytics[key].lastPlayed = new Date().toISOString();
   if (!trackAnalytics[key].days.includes(dayName)) {
     trackAnalytics[key].days.push(dayName);
@@ -610,13 +652,116 @@ const winMaximizeBtn = document.getElementById('winMaximizeBtn');
 const winCloseBtn = document.getElementById('winCloseBtn');
 const winFullscreenBtn = document.getElementById('winFullscreenBtn');
 
+// --- Güvenilir konum atlama -------------------------------------------------
+// İlerleyen (henüz inen) akışlarda tarayıcı, arabelleğe alınmamış bir konuma
+// atlanınca parçayı baştan başlatabiliyordu. Hedef aranabilir değilse indirme
+// tamamlanana kadar bekleyip aynı akışı tam dosya olarak yeniden açıyor ve
+// tam istenen saniyeye gidiyoruz.
+let pendingSeekTarget = null;
+let seekRecoveryToken = 0;
+
+// Dinleme oturumu: dinleme sayısı yalnızca gerçekten çalınan saniyeler
+// şarkının sonuna kadar biriktiğinde artar; ileri atlamak sayımı iptal eder.
+const listenSession = { track: null, listened: 0, skippedForward: false };
+function resetListenSession(track = currentTrack) {
+  listenSession.track = track || null;
+  listenSession.listened = 0;
+  listenSession.skippedForward = false;
+}
+
+function isAudioTimeSeekable(time) {
+  const ranges = audio.seekable;
+  if (!ranges) return false;
+  for (let index = 0; index < ranges.length; index += 1) {
+    if (time >= ranges.start(index) - 0.25 && time <= ranges.end(index) + 0.25) return true;
+  }
+  return false;
+}
+
+function seekAudioTo(seconds) {
+  const duration = audio.duration || currentTrack?.duration || 0;
+  const requested = Number(seconds);
+  if (!Number.isFinite(requested) || !currentTrack) return;
+  const target = Math.max(0, duration > 0 ? Math.min(Math.max(0, duration - 0.25), requested) : requested);
+  const from = pendingSeekTarget ?? (audio.currentTime || 0);
+  if (target > from + 1.5) listenSession.skippedForward = true;
+  const source = audio.currentSrc || audio.src || '';
+  if (!source.includes('/api/audio-stream') || isAudioTimeSeekable(target)) {
+    seekRecoveryToken += 1;
+    pendingSeekTarget = null;
+    try { audio.currentTime = target; } catch {}
+    return;
+  }
+  void recoverUnseekableSeek(target, source);
+}
+
+async function recoverUnseekableSeek(target, streamUrl) {
+  const token = ++seekRecoveryToken;
+  const session = playSessionId;
+  const wasPlaying = !audio.paused || isPlaying;
+  pendingSeekTarget = target;
+  paintPlaybackPosition(target);
+  try {
+    const response = await fetch(streamUrl.replace('/api/audio-stream', '/api/audio-ready'));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch (error) {
+    console.warn('[seek] stream readiness check failed:', error);
+    if (token === seekRecoveryToken) {
+      pendingSeekTarget = null;
+      try { audio.currentTime = target; } catch {}
+    }
+    return;
+  }
+  if (token !== seekRecoveryToken || session !== playSessionId || (audio.currentSrc || audio.src) !== streamUrl) return;
+  const finalTarget = pendingSeekTarget ?? target;
+  suppressPauseSideEffects = true;
+  try {
+    await new Promise((resolve, reject) => {
+      const done = () => { cleanup(); resolve(); };
+      const fail = () => { cleanup(); reject(audio.error || new Error('Akış yeniden açılamadı.')); };
+      const cleanup = () => {
+        audio.removeEventListener('loadedmetadata', done);
+        audio.removeEventListener('error', fail);
+      };
+      audio.addEventListener('loadedmetadata', done, { once: true });
+      audio.addEventListener('error', fail, { once: true });
+      audio.load();
+    });
+    if (token !== seekRecoveryToken || session !== playSessionId) return;
+    audio.currentTime = finalTarget;
+    if (wasPlaying) await audio.play().catch(() => {});
+  } catch (error) {
+    console.warn('[seek] could not reopen completed stream:', error);
+  } finally {
+    suppressPauseSideEffects = false;
+    if (token === seekRecoveryToken) pendingSeekTarget = null;
+  }
+}
+
+let suppressPauseSideEffects = false;
+
+function paintPlaybackPosition(seconds) {
+  const duration = audio.duration || currentTrack?.duration || 0;
+  const percent = duration > 0 ? Math.max(0, Math.min(100, (seconds / duration) * 100)) : 0;
+  const label = formatTime(seconds);
+  if (typeof progressBarFill !== 'undefined' && progressBarFill) progressBarFill.style.width = `${percent}%`;
+  if (typeof lyricsProgressFill !== 'undefined' && lyricsProgressFill) lyricsProgressFill.style.width = `${percent}%`;
+  if (typeof currentTimeLabel !== 'undefined' && currentTimeLabel) currentTimeLabel.textContent = label;
+  if (typeof lyricsCurrentTime !== 'undefined' && lyricsCurrentTime) lyricsCurrentTime.textContent = label;
+  publishMiniPlayerState(true);
+}
+
 window.sunifyAPI?.onMiniPlayerControl?.((action, value) => {
   if (action === 'toggle') playPauseBtn.click();
   if (action === 'previous') prevBtn.click();
   if (action === 'next') nextBtn.click();
   if (action === 'seek') {
     const duration = audio.duration || currentTrack?.duration || 0;
-    if (duration > 0) audio.currentTime = duration * Math.max(0, Math.min(1, Number(value) || 0));
+    if (duration > 0) seekAudioTo(duration * Math.max(0, Math.min(1, Number(value) || 0)));
+  }
+  if (action === 'volume') {
+    const volume = Math.max(0, Math.min(1, Number(value)));
+    if (Number.isFinite(volume) && typeof window.sunifySetVolume === 'function') window.sunifySetVolume(volume);
   }
 });
 
@@ -630,9 +775,10 @@ function publishMiniPlayerState(force = false) {
   const artist = currentTrack?.artist || 'Bir şarkı seç';
   const thumbnail = currentTrack?.thumbnail || '';
   const playing = Boolean(currentTrack && isPlaying);
+  const volume = Math.round((audio?.volume ?? 1) * 100) / 100;
   // The mini player displays time at one-second precision, so do not resend
   // duplicate progress updates for every frequent media timeupdate event.
-  const stateKey = `${title}\u0000${artist}\u0000${thumbnail}\u0000${playing}\u0000${Math.floor(current)}\u0000${Math.floor(duration)}\u0000${miniPlayerAccent}`;
+  const stateKey = `${title}\u0000${artist}\u0000${thumbnail}\u0000${playing}\u0000${Math.floor(current)}\u0000${Math.floor(duration)}\u0000${miniPlayerAccent}\u0000${volume}`;
   if (!force && stateKey === lastMiniPlayerStateKey) return;
   lastMiniPlayerStateKey = stateKey;
   window.sunifyAPI.updateMiniPlayerState({
@@ -640,6 +786,7 @@ function publishMiniPlayerState(force = false) {
     artist,
     thumbnail,
     playing,
+    volume,
     progress: duration > 0 ? (current / duration) * 100 : 0,
     elapsed: formatTime(current),
     duration: formatTime(duration),
@@ -822,6 +969,7 @@ function activateAccountData(session) {
   likedTracks = readAccountJson('sunify_liked', [], currentAuthSession);
   recommendationFeedback = readAccountJson('sunify_recommendation_feedback', { liked: [], dismissed: [] }, currentAuthSession);
   trackAnalytics = readAccountJson('sunify_track_analytics', {}, currentAuthSession);
+  applyListenCountMigration();
   customPlaylists = readAccountJson('sunify_custom_playlists', [], currentAuthSession);
 
   [renderLibraryItems, renderRecentHistory, renderDailyMixes, renderNowPlayingDualGrid, renderListeningStats, updateLikeButtonUI]
@@ -852,6 +1000,7 @@ function migrateLegacyAccountData() {
   likedTracks = readAccountJson('sunify_liked', [], currentAuthSession);
   recommendationFeedback = readAccountJson('sunify_recommendation_feedback', { liked: [], dismissed: [] }, currentAuthSession);
   trackAnalytics = readAccountJson('sunify_track_analytics', {}, currentAuthSession);
+  applyListenCountMigration();
   customPlaylists = readAccountJson('sunify_custom_playlists', [], currentAuthSession);
 }
 
@@ -1221,8 +1370,8 @@ function setupKeyboardShortcuts() {
     if ((event.ctrlKey || event.metaKey) && key === 'arrowleft') { event.preventDefault(); prevBtn?.click(); return; }
     if (event.ctrlKey || event.metaKey) return;
     if (key === ' ' && !target?.closest?.('button, a')) { event.preventDefault(); playPauseBtn?.click(); }
-    else if (key === 'arrowright') { event.preventDefault(); if (Number.isFinite(audio.duration)) audio.currentTime = Math.min(audio.duration, audio.currentTime + 5); }
-    else if (key === 'arrowleft') { event.preventDefault(); audio.currentTime = Math.max(0, audio.currentTime - 5); }
+    else if (key === 'arrowright') { event.preventDefault(); if (Number.isFinite(audio.duration)) seekAudioTo(Math.min(audio.duration, (pendingSeekTarget ?? audio.currentTime) + 5)); }
+    else if (key === 'arrowleft') { event.preventDefault(); seekAudioTo(Math.max(0, (pendingSeekTarget ?? audio.currentTime) - 5)); }
     else if (key === 'arrowup' || key === 'arrowdown') {
       event.preventDefault();
       volumeSlider.value = String(Math.max(0, Math.min(1, Number(volumeSlider.value) + (key === 'arrowup' ? 0.05 : -0.05))));
@@ -3311,6 +3460,9 @@ async function playSelectedTrack(track, playlist = [], index = 0, options = {}) 
   if (lyricsCurrentTime) lyricsCurrentTime.textContent = '0:00';
 
   currentTrack = track;
+  seekRecoveryToken += 1;
+  pendingSeekTarget = null;
+  resetListenSession(track);
   isPlaying = false;
   isResolvingPlayback = true;
   playPauseBtn.classList.add('is-loading');
@@ -3378,7 +3530,7 @@ async function playSelectedTrack(track, playlist = [], index = 0, options = {}) 
     console.info(`[play-timing] "${track.title}" click-to-play: ${(performance.now() - playRequestedAt).toFixed(0)}ms`);
     const resumePosition = Math.max(0, Number(options.resumePosition) || 0);
     if (resumePosition > 2 && Number.isFinite(audio.duration) && audio.duration > resumePosition + 2) {
-      try { audio.currentTime = resumePosition; } catch {}
+      seekAudioTo(resumePosition);
     }
     isResolvingPlayback = false;
     playPauseBtn.classList.remove('is-loading');
@@ -3523,11 +3675,23 @@ async function loadTrackLyrics(title, artist, duration, preferredSource = 'auto'
   if (lyricsCurrentSourceBadge) lyricsCurrentSourceBadge.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Kaynak aranıyor';
 
   const requestSource = async (source) => {
-    const params = new URLSearchParams({ title: title || '', artist: artist || '', duration: String(Number(duration) || ''), source });
-    const response = await fetch(`${API_BASE}/lyrics?${params.toString()}`, { signal: controller.signal });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Şarkı sözleri alınamadı.');
-    return data;
+    const offlineKey = `sunify_offline_lyrics_${String(artist || '').trim().toLowerCase()}_${String(title || '').trim().toLowerCase()}_${source}`;
+    try {
+      const params = new URLSearchParams({ title: title || '', artist: artist || '', duration: String(Number(duration) || ''), source });
+      const response = await fetch(`${API_BASE}/lyrics?${params.toString()}`, { signal: controller.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Şarkı sözleri alınamadı.');
+      if (data?.success && (data.syncedLyrics || data.plainLyrics)) {
+        try { localStorage.setItem(offlineKey, JSON.stringify(data)); } catch {}
+      }
+      return data;
+    } catch (err) {
+      try {
+        const cached = JSON.parse(localStorage.getItem(offlineKey) || 'null');
+        if (cached?.success) return cached;
+      } catch {}
+      throw err;
+    }
   };
 
   try {
@@ -3617,7 +3781,7 @@ function renderSyncedLyrics(lyrics) {
     });
 
     p.onclick = () => {
-      audio.currentTime = item.time;
+      seekAudioTo(item.time);
     };
     lyricsLinesContainer.appendChild(p);
     renderedLyricLines.push({ element: p, words: wordElements });
@@ -3927,6 +4091,7 @@ function setupAudioEvents() {
   };
 
   audio.onpause = () => {
+    if (suppressPauseSideEffects) return;
     stopLyricsSyncAnimation();
     isPlaying = false;
     persistPlaybackResumeState(audio.currentTime || 0);
@@ -4279,6 +4444,8 @@ function setupAudioEvents() {
   }
 
   volumeSlider.oninput = (e) => handleVolumeChange(e.target.value);
+  window.sunifySetVolume = (value) => { handleVolumeChange(value); publishMiniPlayerState(true); };
+  audio.addEventListener('volumechange', () => publishMiniPlayerState());
   let savedVolume = null;
   try {
     const storedVolume = localStorage.getItem('sunify_volume');
@@ -4313,12 +4480,13 @@ function setupAudioEvents() {
     }
 
     // Dinleme süresi farkını hesapla ve analitiğe ekle
-    if (currentTrack && isPlaying) {
+    if (currentTrack && isPlaying && pendingSeekTarget === null) {
       if (lastTrackedTime > 0 && current > lastTrackedTime) {
         const delta = current - lastTrackedTime;
         if (delta < 2.5) {
           // Normal oynatma artışıysa kaydet
           updateTrackListeningDuration(currentTrack, delta);
+          if (listenSession.track === currentTrack) listenSession.listened += delta;
         }
       }
       lastTrackedTime = current;
@@ -4326,7 +4494,7 @@ function setupAudioEvents() {
 
     durationLabel.textContent = formatTime(duration);
     lyricsTotalTime.textContent = formatTime(duration);
-    if (seekDragging) return;
+    if (seekDragging || pendingSeekTarget !== null) return;
     currentTimeLabel.textContent = formatTime(current);
     lyricsCurrentTime.textContent = formatTime(current);
 
@@ -4382,7 +4550,7 @@ function setupAudioEvents() {
         seekDragging = false;
         document.body.classList.remove('is-seeking');
         container.classList.remove('is-dragging');
-        if (endEvent.type !== 'pointercancel') audio.currentTime = ratio * duration;
+        if (endEvent.type !== 'pointercancel') seekAudioTo(ratio * duration);
       };
       container.addEventListener('pointermove', move);
       container.addEventListener('pointerup', end);
@@ -4408,9 +4576,9 @@ function setupAudioEvents() {
     e.preventDefault();
     const duration = audio.duration || currentTrack?.duration || 0;
     if (!duration) return;
-    if (e.key === 'Home') audio.currentTime = 0;
-    else if (e.key === 'End') audio.currentTime = duration;
-    else audio.currentTime = Math.max(0, Math.min(duration, audio.currentTime + (e.key === 'ArrowRight' ? 5 : -5)));
+    if (e.key === 'Home') seekAudioTo(0);
+    else if (e.key === 'End') seekAudioTo(duration);
+    else seekAudioTo(Math.max(0, Math.min(duration, (pendingSeekTarget ?? audio.currentTime) + (e.key === 'ArrowRight' ? 5 : -5))));
   };
 
   prevBtn.onclick = lyricsPrevBtn.onclick = () => {
@@ -4433,6 +4601,15 @@ function setupAudioEvents() {
 
   audio.onended = () => {
     void loadCachedAudioTracks();
+    // Dinleme sayısı: yalnızca ileri atlanmadan, gerçekten çalınan saniyeler
+    // şarkının sonuna kadar biriktiyse artar ("sona atla" sayılmaz).
+    const endedTrack = currentTrack;
+    const endedDuration = Number(audio.duration) || Number(endedTrack?.duration) || 0;
+    if (endedTrack && listenSession.track === endedTrack && !listenSession.skippedForward
+      && endedDuration > 0 && listenSession.listened >= Math.max(endedDuration * 0.95, endedDuration - 4)) {
+      trackSongCompletedEvent(endedTrack);
+    }
+    resetListenSession(endedTrack);
     if (repeatMode === 'one') {
       audio.currentTime = 0;
       audio.play().catch(() => {});
@@ -6486,6 +6663,7 @@ async function pullFromCloud() {
     likedTracks = Array.isArray(analytics.liked_tracks) ? analytics.liked_tracks : [];
     trackAnalytics = analytics.listening_stats && typeof analytics.listening_stats === 'object'
       ? analytics.listening_stats : {};
+    applyListenCountMigration();
     recentHistory = Object.values(trackAnalytics)
       .filter((entry) => entry && entry.title)
       .sort((a, b) => new Date(b.lastPlayed || 0) - new Date(a.lastPlayed || 0))
@@ -6524,3 +6702,303 @@ initAccountSystem();
 
 
 
+
+// --- GELİŞMİŞ OYNATMA, MEDYA OTURUMU, UYKU ZAMANLAYICISI VE ÖZET ---
+(function initAdvancedSunifyFeatures() {
+  // 1. Windows Media Session API (Klavye medya tuşları + Windows ses kaplaması)
+  function syncWindowsMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      if (currentTrack && typeof MediaMetadata !== 'undefined') {
+        const artwork = currentTrack.thumbnail && currentTrack.thumbnail.startsWith('http')
+          ? [{ src: currentTrack.thumbnail, sizes: '512x512', type: 'image/jpeg' }]
+          : [];
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: currentTrack.title || 'Sunify',
+          artist: currentTrack.artist || 'Sunify',
+          album: 'Sunify',
+          artwork,
+        });
+      }
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+      const duration = Number(audio.duration) || Number(currentTrack?.duration) || 0;
+      const position = Math.max(0, Math.min(duration || 0, Number(audio.currentTime) || 0));
+      if (duration > 0 && typeof navigator.mediaSession.setPositionState === 'function') {
+        navigator.mediaSession.setPositionState({
+          duration,
+          playbackRate: audio.playbackRate || 1,
+          position,
+        });
+      }
+    } catch {}
+  }
+
+  if ('mediaSession' in navigator) {
+    const bindAction = (action, handler) => {
+      try { navigator.mediaSession.setActionHandler(action, handler); } catch {}
+    };
+    bindAction('play', () => { if (audio.paused) playPauseBtn?.click(); });
+    bindAction('pause', () => { if (!audio.paused) playPauseBtn?.click(); });
+    bindAction('previoustrack', () => prevBtn?.click());
+    bindAction('nexttrack', () => nextBtn?.click());
+    bindAction('seekto', (details) => {
+      if (details && Number.isFinite(details.seekTime)) seekAudioTo(details.seekTime);
+    });
+    bindAction('seekbackward', (details) => {
+      const offset = Number(details?.seekOffset) || 5;
+      seekAudioTo(Math.max(0, (audio.currentTime || 0) - offset));
+    });
+    bindAction('seekforward', (details) => {
+      const offset = Number(details?.seekOffset) || 5;
+      const duration = Number(audio.duration) || Number(currentTrack?.duration) || 0;
+      seekAudioTo(Math.min(duration, (audio.currentTime || 0) + offset));
+    });
+  }
+
+  audio.addEventListener('play', syncWindowsMediaSession);
+  audio.addEventListener('pause', syncWindowsMediaSession);
+  audio.addEventListener('loadedmetadata', syncWindowsMediaSession);
+  audio.addEventListener('ratechange', syncWindowsMediaSession);
+
+  // 2. Oynatma hızı (0.85x - 1.25x)
+  let currentPlaybackSpeed = Number(localStorage.getItem('sunify_playback_speed')) || 1;
+  function applyPlaybackSpeed(speed) {
+    const safeSpeed = [0.85, 1, 1.15, 1.25].includes(Number(speed)) ? Number(speed) : 1;
+    currentPlaybackSpeed = safeSpeed;
+    localStorage.setItem('sunify_playback_speed', String(safeSpeed));
+    audio.defaultPlaybackRate = safeSpeed;
+    audio.playbackRate = safeSpeed;
+    document.querySelectorAll('#settingPlaybackSpeed .pill-btn').forEach((btn) => {
+      btn.classList.toggle('active', Number(btn.dataset.val) === safeSpeed);
+    });
+  }
+  applyPlaybackSpeed(currentPlaybackSpeed);
+  audio.addEventListener('loadedmetadata', () => {
+    audio.playbackRate = currentPlaybackSpeed;
+  });
+  document.querySelectorAll('#settingPlaybackSpeed .pill-btn').forEach((btn) => {
+    btn.addEventListener('click', () => applyPlaybackSpeed(Number(btn.dataset.val)));
+  });
+
+  // 3. Ses Seviyesi Dengeleme (DynamicsCompressorNode ile Loudness Normalization)
+  let loudnessCompressor = null;
+  let normalizationEnabled = localStorage.getItem('sunify_audio_normalize') === 'true';
+  const normalizeToggle = document.getElementById('settingAudioNormalize');
+  if (normalizeToggle) normalizeToggle.checked = normalizationEnabled;
+
+  function applyLoudnessNormalization(enabled) {
+    normalizationEnabled = Boolean(enabled);
+    localStorage.setItem('sunify_audio_normalize', String(normalizationEnabled));
+    if (normalizeToggle) normalizeToggle.checked = normalizationEnabled;
+    if (!normalizationEnabled && !equalizerFilters.length) return;
+    try {
+      initializeAudioEqualizer();
+      const lastFilter = equalizerFilters[equalizerFilters.length - 1];
+      if (!lastFilter || !audioContext) return;
+      if (!loudnessCompressor) {
+        loudnessCompressor = audioContext.createDynamicsCompressor();
+        loudnessCompressor.threshold.value = -24;
+        loudnessCompressor.knee.value = 30;
+        loudnessCompressor.ratio.value = 6;
+        loudnessCompressor.attack.value = 0.005;
+        loudnessCompressor.release.value = 0.25;
+      }
+      try { lastFilter.disconnect(); } catch {}
+      try { loudnessCompressor.disconnect(); } catch {}
+      if (normalizationEnabled) {
+        lastFilter.connect(loudnessCompressor);
+        loudnessCompressor.connect(audioContext.destination);
+      } else {
+        lastFilter.connect(audioContext.destination);
+      }
+    } catch (err) {
+      console.warn('Ses dengeleme etkinleştirilemedi:', err.message);
+    }
+  }
+  if (normalizationEnabled) applyLoudnessNormalization(true);
+  normalizeToggle?.addEventListener('change', (e) => applyLoudnessNormalization(e.target.checked));
+
+  // 4. Yumuşak Geçiş (Crossfade)
+  let crossfadeSeconds = Number(localStorage.getItem('sunify_crossfade_seconds')) || 0;
+  let crossfadeActive = false;
+  let preFadeVolume = null;
+
+  function setCrossfadeSeconds(sec) {
+    const safeSec = [0, 3, 5, 8].includes(Number(sec)) ? Number(sec) : 0;
+    crossfadeSeconds = safeSec;
+    localStorage.setItem('sunify_crossfade_seconds', String(safeSec));
+    document.querySelectorAll('#settingCrossfadeSeconds .pill-btn').forEach((btn) => {
+      btn.classList.toggle('active', Number(btn.dataset.val) === safeSec);
+    });
+  }
+  setCrossfadeSeconds(crossfadeSeconds);
+  document.querySelectorAll('#settingCrossfadeSeconds .pill-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setCrossfadeSeconds(Number(btn.dataset.val)));
+  });
+
+  // 5. Uyku Zamanlayıcısı (15/30/60 dk veya Şarkı sonu)
+  let sleepTimerMode = '0';
+  let sleepTimerDeadline = 0;
+  let sleepTimerInterval = null;
+  const sleepStatusEl = document.getElementById('sleepTimerStatusText');
+
+  function updateSleepTimerStatus() {
+    if (!sleepStatusEl) return;
+    if (sleepTimerMode === '0') {
+      sleepStatusEl.textContent = 'Belirlenen süre sonunda müziği otomatik olarak durdurur.';
+    } else if (sleepTimerMode === 'end') {
+      sleepStatusEl.textContent = 'Etkin: Çalan şarkı bittiğinde müzik otomatik durdurulacak.';
+    } else if (sleepTimerDeadline > Date.now()) {
+      const remainingSec = Math.max(0, Math.ceil((sleepTimerDeadline - Date.now()) / 1000));
+      const mins = Math.floor(remainingSec / 60);
+      const secs = remainingSec % 60;
+      sleepStatusEl.textContent = `Etkin: ${mins}:${String(secs).padStart(2, '0')} sonra müzik durdurulacak.`;
+    }
+  }
+
+  function setSleepTimer(mode) {
+    sleepTimerMode = String(mode || '0');
+    if (sleepTimerInterval) {
+      clearInterval(sleepTimerInterval);
+      sleepTimerInterval = null;
+    }
+    document.querySelectorAll('#settingSleepTimer .pill-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.val === sleepTimerMode);
+    });
+    if (sleepTimerMode === '0' || sleepTimerMode === 'end') {
+      sleepTimerDeadline = 0;
+      updateSleepTimerStatus();
+      return;
+    }
+    const minutes = Number(sleepTimerMode) || 0;
+    sleepTimerDeadline = Date.now() + minutes * 60 * 1000;
+    updateSleepTimerStatus();
+    sleepTimerInterval = setInterval(() => {
+      if (Date.now() >= sleepTimerDeadline) {
+        setSleepTimer('0');
+        if (!audio.paused) audio.pause();
+        showAppNotification('Uyku zamanlayıcısı', 'Süre doldu, müzik duraklatıldı.');
+      } else {
+        updateSleepTimerStatus();
+      }
+    }, 1000);
+  }
+
+  document.querySelectorAll('#settingSleepTimer .pill-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setSleepTimer(btn.dataset.val));
+  });
+
+  // Crossfade & Şarkı sonu uyku zamanlayıcısı takibi
+  audio.addEventListener('timeupdate', () => {
+    if (!currentTrack || !isPlaying || seekDragging || pendingSeekTarget !== null) return;
+    const duration = Number(audio.duration) || Number(currentTrack.duration) || 0;
+    const current = Number(audio.currentTime) || 0;
+    if (!(duration > 15)) return;
+    const remaining = duration - current;
+
+    if (sleepTimerMode === 'end' && remaining <= 0.35) {
+      setSleepTimer('0');
+      audio.pause();
+      showAppNotification('Uyku zamanlayıcısı', 'Şarkı tamamlandı, oynatma durduruldu.');
+      return;
+    }
+
+    if (crossfadeSeconds > 0 && repeatMode !== 'one' && sleepTimerMode !== 'end' && remaining <= crossfadeSeconds && remaining > 0.15) {
+      if (!crossfadeActive) {
+        crossfadeActive = true;
+        preFadeVolume = Number(localStorage.getItem('sunify_volume')) || audio.volume || 0.8;
+      }
+      const ratio = Math.max(0.05, Math.min(1, remaining / crossfadeSeconds));
+      audio.volume = Math.max(0, Math.min(1, (preFadeVolume || 0.8) * ratio));
+    } else if (crossfadeActive && remaining > crossfadeSeconds + 1) {
+      crossfadeActive = false;
+      if (preFadeVolume !== null) audio.volume = preFadeVolume;
+    }
+  });
+
+  audio.addEventListener('emptied', () => {
+    if (crossfadeActive && preFadeVolume !== null) {
+      audio.volume = preFadeVolume;
+    }
+    crossfadeActive = false;
+  });
+
+  // 6. Kapatınca sistem tepsisine küçült ayarı
+  const closeToTrayToggle = document.getElementById('settingCloseToTray');
+  const savedCloseToTray = localStorage.getItem('sunify_close_to_tray') !== 'false';
+  if (closeToTrayToggle) closeToTrayToggle.checked = savedCloseToTray;
+  window.sunifyAPI?.updateCloseToTray?.(savedCloseToTray);
+  closeToTrayToggle?.addEventListener('change', (e) => {
+    const enabled = Boolean(e.target.checked);
+    localStorage.setItem('sunify_close_to_tray', String(enabled));
+    window.sunifyAPI?.updateCloseToTray?.(enabled);
+  });
+
+  // 7. Sunify Dinleme Özeti (Wrapped Modal)
+  const wrappedModal = document.getElementById('wrappedModal');
+  const openWrappedBtn = document.getElementById('openWrappedModalBtn');
+  const closeWrappedBtn = document.getElementById('closeWrappedModalBtn');
+  const wrappedBody = document.getElementById('wrappedModalBody');
+
+  function renderWrappedSummary() {
+    if (!wrappedBody) return;
+    const entries = Object.values(trackAnalytics || {}).filter((e) => e && e.title);
+    const totalPlays = entries.reduce((s, e) => s + (Number(e.playCount) || 0), 0);
+    const totalMinutes = Math.round(entries.reduce((s, e) => s + (Number(e.totalSeconds) || 0), 0) / 60);
+    const topTracks = [...entries]
+      .filter((e) => (Number(e.playCount) || 0) > 0)
+      .sort((a, b) => (Number(b.playCount) || 0) - (Number(a.playCount) || 0))
+      .slice(0, 5);
+    const artistCounts = new Map();
+    entries.forEach((e) => {
+      const count = Number(e.playCount) || 0;
+      if (count > 0) {
+        const name = e.artist || 'Bilinmeyen Sanatçı';
+        artistCounts.set(name, (artistCounts.get(name) || 0) + count);
+      }
+    });
+    const topArtists = [...artistCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+    const dayFreq = new Map();
+    entries.forEach((e) => (e.days || []).forEach((d) => dayFreq.set(d, (dayFreq.get(d) || 0) + 1)));
+    const favDay = [...dayFreq.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'Henüz belirlenmedi';
+
+    wrappedBody.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+        <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)">
+          <div style="font-size:11px;opacity:.7">Tam Dinlenen Şarkı</div>
+          <div style="font-size:22px;font-weight:800;margin-top:4px">${totalPlays}</div>
+        </div>
+        <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)">
+          <div style="font-size:11px;opacity:.7">Toplam Süre</div>
+          <div style="font-size:22px;font-weight:800;margin-top:4px">${totalMinutes} dk</div>
+        </div>
+        <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)">
+          <div style="font-size:11px;opacity:.7">En Aktif Gün</div>
+          <div style="font-size:16px;font-weight:800;margin-top:6px">${favDay}</div>
+        </div>
+      </div>
+      <div style="padding:14px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)">
+        <div style="font-size:12px;font-weight:700;opacity:.75;margin-bottom:8px">EN ÇOK DİNLEDİĞİN PARÇALAR</div>
+        ${topTracks.length
+          ? topTracks.map((t, i) => `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.05)"><span><strong>${i + 1}.</strong> ${t.title} <span style="opacity:.65">· ${t.artist || ''}</span></span><strong>${t.playCount} kez</strong></div>`).join('')
+          : '<div style="font-size:13px;opacity:.7">Bir şarkıyı atlamadan sonuna kadar dinlediğinde burada listelenir.</div>'}
+      </div>
+      <div style="padding:14px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)">
+        <div style="font-size:12px;font-weight:700;opacity:.75;margin-bottom:8px">FAVORİ SANATÇILARIN</div>
+        ${topArtists.length
+          ? topArtists.map(([name, count], i) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span><strong>${i + 1}.</strong> ${name}</span><span>${count} tam dinleme</span></div>`).join('')
+          : '<div style="font-size:13px;opacity:.7">Henüz tam dinleme verisi yok.</div>'}
+      </div>
+    `;
+  }
+
+  openWrappedBtn?.addEventListener('click', () => {
+    renderWrappedSummary();
+    wrappedModal?.classList.add('active');
+  });
+  closeWrappedBtn?.addEventListener('click', () => wrappedModal?.classList.remove('active'));
+  wrappedModal?.addEventListener('click', (e) => {
+    if (e.target === wrappedModal) wrappedModal.classList.remove('active');
+  });
+})();

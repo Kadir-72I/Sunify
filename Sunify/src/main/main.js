@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, safeStorage, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -77,6 +77,10 @@ ipcMain.on('secure-auth-store:delete', (event, key) => {
 });
 let miniPlayerWindow;
 let miniPlayerDismissed = false;
+let appTray = null;
+let isQuittingApp = false;
+let closeToTrayEnabled = true;
+let latestPlaybackState = { title: 'Sunify', artist: 'Bir şarkı seç', playing: false };
 const miniPlayerSettings = {
   enabled: true,
   onMinimize: true,
@@ -85,6 +89,158 @@ const miniPlayerSettings = {
   size: 'medium',
   opacity: 0.88,
 };
+
+function createGlyphIcon(kind) {
+  const size = 16;
+  const buf = Buffer.alloc(size * size * 4, 0);
+  const put = (x, y, a = 255) => {
+    if (x < 0 || x >= size || y < 0 || y >= size) return;
+    const idx = (y * size + x) * 4;
+    buf[idx] = 255;
+    buf[idx + 1] = 255;
+    buf[idx + 2] = 255;
+    buf[idx + 3] = a;
+  };
+  if (kind === 'play') {
+    for (let y = 3; y <= 12; y++) {
+      const span = y <= 7 ? y - 3 : 12 - y;
+      for (let x = 5; x <= 5 + span * 1.4; x++) put(Math.round(x), y);
+    }
+  } else if (kind === 'pause') {
+    for (let y = 3; y <= 12; y++) {
+      for (let x = 4; x <= 6; x++) put(x, y);
+      for (let x = 9; x <= 11; x++) put(x, y);
+    }
+  } else if (kind === 'prev') {
+    for (let y = 3; y <= 12; y++) {
+      put(4, y);
+      put(5, y);
+      const span = y <= 7 ? 7 - y : y - 8;
+      for (let x = 6 + span; x <= 12; x++) put(Math.round(x), y);
+    }
+  } else if (kind === 'next') {
+    for (let y = 3; y <= 12; y++) {
+      put(11, y);
+      put(10, y);
+      const span = y <= 7 ? y - 3 : 12 - y;
+      for (let x = 4; x <= 4 + span; x++) put(Math.round(x), y);
+    }
+  }
+  return nativeImage.createFromBitmap(buf, { width: size, height: size });
+}
+
+function getAppIconImage() {
+  const candidates = [
+    path.join(__dirname, '../../build/sunify.ico'),
+    path.join(__dirname, '../../build/sunify-icon-source.png'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      const img = nativeImage.createFromPath(candidate);
+      if (!img.isEmpty()) return img;
+    }
+  }
+  return createGlyphIcon('play');
+}
+
+function updateTaskbarThumbarButtons() {
+  if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const playing = Boolean(latestPlaybackState.playing);
+    mainWindow.setThumbarButtons([
+      {
+        tooltip: 'Önceki Şarkı',
+        icon: createGlyphIcon('prev'),
+        click: () => mainWindow?.webContents?.send('mini-player-control', 'previous'),
+      },
+      {
+        tooltip: playing ? 'Duraklat' : 'Oynat',
+        icon: createGlyphIcon(playing ? 'pause' : 'play'),
+        click: () => mainWindow?.webContents?.send('mini-player-control', 'toggle'),
+      },
+      {
+        tooltip: 'Sonraki Şarkı',
+        icon: createGlyphIcon('next'),
+        click: () => mainWindow?.webContents?.send('mini-player-control', 'next'),
+      },
+    ]);
+  } catch {}
+}
+
+function updateSystemTrayMenu() {
+  if (!appTray) return;
+  const trackLabel = latestPlaybackState.title && latestPlaybackState.title !== 'Sunify'
+    ? `${latestPlaybackState.title} — ${latestPlaybackState.artist || 'Sunify'}`.slice(0, 80)
+    : 'Sunify Masaüstü Müzik Çalar';
+  appTray.setToolTip(trackLabel);
+  const contextMenu = Menu.buildFromTemplate([
+    { label: trackLabel, enabled: false },
+    { type: 'separator' },
+    {
+      label: latestPlaybackState.playing ? 'Duraklat' : 'Oynat',
+      click: () => mainWindow?.webContents?.send('mini-player-control', 'toggle'),
+    },
+    {
+      label: 'Önceki Şarkı',
+      click: () => mainWindow?.webContents?.send('mini-player-control', 'previous'),
+    },
+    {
+      label: 'Sonraki Şarkı',
+      click: () => mainWindow?.webContents?.send('mini-player-control', 'next'),
+    },
+    { type: 'separator' },
+    {
+      label: 'Mini Oynatıcıyı Göster / Gizle',
+      click: () => {
+        if (miniPlayerWindow && !miniPlayerWindow.isDestroyed() && miniPlayerWindow.isVisible()) {
+          miniPlayerDismissed = true;
+          miniPlayerWindow.hide();
+        } else {
+          miniPlayerDismissed = false;
+          showMiniPlayer(true);
+        }
+      },
+    },
+    {
+      label: 'Sunify Penceresini Göster',
+      click: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        mainWindow.show();
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Çıkış',
+      click: () => {
+        isQuittingApp = true;
+        app.quit();
+      },
+    },
+  ]);
+  appTray.setContextMenu(contextMenu);
+}
+
+function ensureSystemTray() {
+  if (appTray) return;
+  try {
+    appTray = new Tray(getAppIconImage());
+    appTray.on('click', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        mainWindow.focus();
+      } else {
+        mainWindow.show();
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    });
+    updateSystemTrayMenu();
+  } catch (err) {
+    console.warn('Sistem tepsisi oluşturulamadı:', err.message);
+  }
+}
 
 function parseEmailVerificationCallback(rawUrl) {
   try {
@@ -157,10 +313,10 @@ function miniPlayerBounds() {
   const { screen } = require('electron');
   const area = screen.getPrimaryDisplay().workArea;
   const dimensions = {
-    small: { width: 360, height: 72 },
-    medium: { width: 456, height: 82 },
-    large: { width: 560, height: 96 },
-  }[miniPlayerSettings.size] || { width: 456, height: 82 };
+    small: { width: 430, height: 72 },
+    medium: { width: 540, height: 82 },
+    large: { width: 650, height: 96 },
+  }[miniPlayerSettings.size] || { width: 540, height: 82 };
   const margin = 18;
   const x = miniPlayerSettings.position === 'top-left'
     ? area.x + margin
@@ -255,7 +411,10 @@ function createWindow() {
       pendingPlayRequest = null;
     }
   });
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    updateTaskbarThumbarButtons();
+  });
   mainWindow.setMenuBarVisibility(false);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) shell.openExternal(url);
@@ -264,21 +423,36 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!url.startsWith('file://')) event.preventDefault();
   });
+  mainWindow.on('close', (event) => {
+    if (!isQuittingApp && closeToTrayEnabled && appTray) {
+      event.preventDefault();
+      mainWindow.hide();
+      showMiniPlayer();
+    }
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
     miniPlayerWindow?.close();
   });
   // Wait until Windows has completed minimizing the main window before
   // checking its state or creating/showing the overlay (avoids a race).
-  mainWindow.on('minimize', () => {
-    setTimeout(() => {
-      if (mainWindow?.isMinimized()) showMiniPlayer();
-    }, 60);
-  });
-  mainWindow.on('restore', () => {
+  // The same path is used for every way of minimizing: the in-app button,
+  // clicking the window's taskbar button, Win+D / Win+M and the system menu.
+  const showMiniPlayerWhenMinimized = () => {
+    [60, 250, 700].forEach((delay) => setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) showMiniPlayer();
+    }, delay));
+  };
+  mainWindow.on('minimize', showMiniPlayerWhenMinimized);
+  mainWindow.on('hide', showMiniPlayerWhenMinimized);
+  const hideMiniPlayerWhenRestored = () => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
     miniPlayerDismissed = false;
     if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) miniPlayerWindow.hide();
-  });
+  };
+  mainWindow.on('restore', hideMiniPlayerWhenRestored);
+  mainWindow.on('show', hideMiniPlayerWhenRestored);
+  mainWindow.on('focus', hideMiniPlayerWhenRestored);
 }
 
 function fromAppWindow(event) {
@@ -347,17 +521,34 @@ ipcMain.on('mini-player-opacity', (event, opacity) => {
   }
 });
 
+ipcMain.on('close-to-tray-setting', (event, enabled) => {
+  if (!fromAppWindow(event)) return;
+  closeToTrayEnabled = Boolean(enabled);
+});
+
 ipcMain.on('mini-player-state', (event, state) => {
-  if (!fromAppWindow(event) || !miniPlayerWindow || miniPlayerWindow.isDestroyed()) return;
-  if (!state || typeof state !== 'object') return;
+  if (!fromAppWindow(event) || !state || typeof state !== 'object') return;
+  const nextTitle = String(state.title || '').slice(0, 160);
+  const nextArtist = String(state.artist || '').slice(0, 160);
+  const nextPlaying = Boolean(state.playing);
+  const stateChanged = latestPlaybackState.title !== nextTitle
+    || latestPlaybackState.artist !== nextArtist
+    || latestPlaybackState.playing !== nextPlaying;
+  latestPlaybackState = { title: nextTitle, artist: nextArtist, playing: nextPlaying };
+  if (stateChanged) {
+    updateTaskbarThumbarButtons();
+    updateSystemTrayMenu();
+  }
+  if (!miniPlayerWindow || miniPlayerWindow.isDestroyed()) return;
   miniPlayerWindow.webContents.send('mini-player-state', {
-    title: String(state.title || '').slice(0, 160),
-    artist: String(state.artist || '').slice(0, 160),
+    title: nextTitle,
+    artist: nextArtist,
     thumbnail: typeof state.thumbnail === 'string' && /^https:\/\//.test(state.thumbnail) ? state.thumbnail : '',
-    playing: Boolean(state.playing),
+    playing: nextPlaying,
     progress: Math.max(0, Math.min(100, Number(state.progress) || 0)),
     elapsed: String(state.elapsed || '0:00').slice(0, 8),
     duration: String(state.duration || '0:00').slice(0, 8),
+    volume: Math.max(0, Math.min(1, Number.isFinite(Number(state.volume)) ? Number(state.volume) : 1)),
     accent: /^#[\da-f]{6}$/i.test(state.accent || '') ? state.accent : '#a78bfa',
   });
 });
@@ -376,7 +567,7 @@ ipcMain.on('mini-player-action', (event, action, value) => {
     miniPlayerWindow.hide();
     return;
   }
-  if (['toggle', 'previous', 'next', 'seek'].includes(action) && mainWindow && !mainWindow.isDestroyed()) {
+  if (['toggle', 'previous', 'next', 'seek', 'volume'].includes(action) && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('mini-player-control', action, value);
   }
 });
@@ -481,6 +672,7 @@ app.whenReady().then(() => {
     showMiniPlayer(true);
   });
   initRPC();
+  ensureSystemTray();
   setAccountChangedHandler((profile) => {
     discordAccountProfile = profile;
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -500,6 +692,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  isQuittingApp = true;
   globalShortcut.unregisterAll();
   clearPresence();
 });

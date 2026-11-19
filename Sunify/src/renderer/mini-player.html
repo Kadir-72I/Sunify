@@ -27,6 +27,13 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v14M5 6l10 6-10 6z" /></svg>
         </button>
       </div>
+      <div class="volume" id="volume-control">
+        <button type="button" id="volume-toggle" title="Sesi kapat / aç" aria-label="Sesi kapat veya aç">
+          <svg class="vol-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /></svg>
+          <svg class="vol-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM17 9l5 6M22 9l-5 6" /></svg>
+        </button>
+        <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.8" title="Ses düzeyi" aria-label="Ses düzeyi" />
+      </div>
       <div class="time" id="time">0:00 / 0:00</div>
       <button class="close" type="button" data-action="close" title="Katmanı kapat" aria-label="Katmanı kapat">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>

@@ -839,6 +839,32 @@ app.get('/api/audio-stream', async (req, res) => {
   }
 });
 
+// Resolves once the progressive download behind an /api/audio-stream URL is
+// complete. The renderer uses this before seeking into a part of a growing
+// stream that is not seekable yet; after completion the same stream URL is
+// served as a regular range-capable file, so the seek lands where requested
+// instead of restarting the track.
+app.get('/api/audio-ready', async (req, res) => {
+  const target = String(req.query.id || req.query.q || '').trim();
+  const cacheKey = String(req.query.cacheKey || '').trim();
+  const excludeVideoIds = String(req.query.excludeIds || req.query.excludeId || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => /^[a-zA-Z0-9_-]{11}$/.test(id))
+    .slice(0, 5);
+  const retrySearch = req.query.retrySearch === '1';
+  if ((!target && !cacheKey) || target.length > 500) return res.status(400).json({ error: 'Video ID, arama sorgusu veya önbellek anahtarı gerekli.' });
+  try {
+    const audio = cacheKey
+      ? await getCachedAudioByKey(cacheKey)
+      : await startCachedAudioDownload(target, { priority: 'high', excludeVideoIds, retrySearch });
+    if (!audio.complete) await audio.completion;
+    res.json({ ready: true });
+  } catch (error) {
+    if (!res.headersSent) res.status(502).json({ ready: false, error: error.message });
+  }
+});
+
 // Warm the next track's progressive cache shortly before the current track ends.
 // startCachedAudioDownload returns as soon as the first playable bytes exist;
 // the rest continues in the background and is shared with /api/audio-stream.

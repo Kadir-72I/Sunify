@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+process.env.SUNIFY_DISABLE_SUPABASE = '1';
 const { startServer } = require('../src/server');
 
 const dbFile = path.join(__dirname, '../data/sunify_users.json');

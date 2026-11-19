@@ -2,12 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fetchLyrics } = require('../src/services/audio/lyricsService');
 
-test('Genius provides plain lyrics for Turkish tracks when synced lyrics are missing', { timeout: 10000 }, async () => {
-  const result = await fetchLyrics('Geceler', 'Ezhel', 180, 'genius');
+test('Genius provides complete plain lyrics for Turkish and Massaka tracks', { timeout: 15000 }, async () => {
+  const result = await fetchLyrics('Massaka - Karanlık(Offiziell HD)', 'MASSAKA', 210, 'genius');
   assert.equal(result.success, true);
   assert.equal(result.source, 'Genius (Düz)');
   assert.equal(typeof result.plainLyrics, 'string');
-  assert.ok(result.plainLyrics.length > 50);
+  assert.ok(result.plainLyrics.length > 200);
 });
 
 test('Kugou provides synced lyrics for popular tracks', async () => {

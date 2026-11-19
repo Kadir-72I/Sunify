@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('sunifyAPI', {
   updateMiniPlayerSettings: (settings) => ipcRenderer.send('mini-player-settings', settings),
   updateMiniPlayerOpacity: (opacity) => ipcRenderer.send('mini-player-opacity', opacity),
   updateMiniPlayerState: (state) => ipcRenderer.send('mini-player-state', state),
+  updateCloseToTray: (enabled) => ipcRenderer.send('close-to-tray-setting', Boolean(enabled)),
   onMiniPlayerStateRequest: (callback) => ipcRenderer.on('mini-player-state-request', callback),
   onMiniPlayerControl: (callback) => ipcRenderer.on('mini-player-control', (_event, action, value) => callback(action, value)),
 });

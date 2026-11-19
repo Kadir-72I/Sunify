@@ -1,11 +1,14 @@
 const axios = require('axios');
+const { execFile } = require('child_process');
 
 const LRCLIB = 'https://lrclib.net/api';
 const NETEASE = 'https://music.163.com';
 const GENIUS_SEARCH = 'https://genius.com/api/search/multi';
 const KUGOU_SEARCH = 'http://songsearch.kugou.com/song_search_v2';
+const KUGOU_MOBILE_SEARCH = 'http://mobilecdn.kugou.com/api/v3/search/song';
 const KUGOU_LRC_SEARCH = 'http://lyrics.kugou.com/search';
 const KUGOU_LRC_DOWNLOAD = 'http://lyrics.kugou.com/download';
+const SARKISOZUM_BASE = 'https://www.sarkisozum.gen.tr';
 const LYRICS_OVH = 'https://api.lyrics.ovh/v1';
 
 const RESULT_TTL_MS = 12 * 60 * 60 * 1000;
@@ -16,11 +19,45 @@ const pendingRequests = new Map();
 
 function normalize(value) {
   return String(value || '')
+    .replace(/[ıİ]/g, 'i')
+    .replace(/[şŞ]/g, 's')
+    .replace(/[ğĞ]/g, 'g')
+    .replace(/[üÜ]/g, 'u')
+    .replace(/[öÖ]/g, 'o')
+    .replace(/[çÇ]/g, 'c')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('en-US')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+function cleanQueryMeta(value) {
+  return String(value || '')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\((?:offiziell|official|resmi|hd|4k|audio|video|clip|klip|lyrics?|sarki sozu|şarkı sözü|prod\.?[^)]*|explicit|Visualizer)[^)]*\)/gi, ' ')
+    .replace(/\b(?:offiziell\s*hd|official\s*(?:music\s*)?video|official\s*audio|prod\.?\s*by\s+\S+)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function splitArtistTitle(rawTitle, rawArtist) {
+  let title = cleanQueryMeta(rawTitle);
+  let artist = cleanQueryMeta(rawArtist);
+  if (title.includes(' - ') || title.includes(' – ') || title.includes(' — ')) {
+    const parts = title.split(/\s+[-–—]\s+/);
+    if (parts.length >= 2) {
+      const left = parts[0].trim();
+      const right = parts.slice(1).join(' - ').trim();
+      if (!artist || normalize(artist) === normalize(left) || normalize(left).includes(normalize(artist))) {
+        artist = artist || left;
+        title = right;
+      }
+    }
+  }
+  const primaryArtist = artist.split(/\s*(?:,|&|\bx\b|\bfeat\.?\b|\bft\.?\b)\s*/i)[0]?.trim() || artist;
+  const cleanTitle = title.replace(/\s*(?:\(|\[)?\b(?:feat\.?|ft\.?)\s+[^)\]]+(?:\)|\])?/gi, '').trim() || title;
+  return { title, cleanTitle, artist, primaryArtist };
 }
 
 function cacheKey(title, artist, duration, source) {
@@ -61,8 +98,15 @@ function titleSimilarity(target, candidate) {
 }
 
 function candidateScore(candidate, title, artist, duration) {
-  const titleScore = titleSimilarity(title, candidate.trackName || candidate.name);
-  const artistScore = titleSimilarity(artist, candidate.artistName || candidate.artist);
+  const { cleanTitle, primaryArtist } = splitArtistTitle(title, artist);
+  const titleScore = Math.max(
+    titleSimilarity(title, candidate.trackName || candidate.name),
+    titleSimilarity(cleanTitle, candidate.trackName || candidate.name)
+  );
+  const artistScore = Math.max(
+    titleSimilarity(artist, candidate.artistName || candidate.artist),
+    titleSimilarity(primaryArtist, candidate.artistName || candidate.artist)
+  );
   const candidateDuration = Number(candidate.duration) || 0;
   const wantedDuration = Number(duration) || 0;
   const durationScore = candidateDuration && wantedDuration
@@ -73,9 +117,9 @@ function candidateScore(candidate, title, artist, duration) {
 
 function chooseCandidate(candidates, title, artist, duration) {
   return candidates
-    .filter((item) => item && (item.syncedLyrics || item.plainLyrics))
+    .filter((item) => item && (item.syncedLyrics || item.plainLyrics || item.id))
     .map((item) => ({ item, score: candidateScore(item, title, artist, duration) }))
-    .filter(({ item, score }) => score >= (item.syncedLyrics ? 0.48 : 0.58))
+    .filter(({ item, score }) => score >= (item.syncedLyrics ? 0.45 : 0.52))
     .sort((a, b) => b.score - a.score)[0]?.item || null;
 }
 
@@ -104,78 +148,184 @@ function axiosOptions(signal, timeout = 3500) {
   };
 }
 
+function decodeHtmlEntities(text) {
+  return String(text || '')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+}
+
+// Windows Schannel (curl.exe) ile Cloudflare JA3 TLS kontrolünü aşan yardımcı
+function curlFetch(url, signal, timeoutMs = 4500) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) { resolve(null); return; }
+    const maxSec = Math.max(2, Math.ceil(timeoutMs / 1000));
+    const child = execFile(
+      'curl.exe',
+      [
+        '-sL',
+        '--compressed',
+        '--max-time', String(maxSec),
+        '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        '-H', 'Accept-Language: tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+        url,
+      ],
+      { maxBuffer: 6 * 1024 * 1024, timeout: timeoutMs + 500, windowsHide: true },
+      (err, stdout) => resolve(err ? null : stdout)
+    );
+    if (signal) {
+      const onAbort = () => { try { child.kill(); } catch {} resolve(null); };
+      signal.addEventListener('abort', onAbort, { once: true });
+      child.on('exit', () => signal.removeEventListener('abort', onAbort));
+    }
+  });
+}
+
 // 1. LRCLIB Provider (Açık kaynak senkronize söz arşivi)
 async function fetchLrclib(title, artist, duration, signal) {
+  const { cleanTitle, primaryArtist } = splitArtistTitle(title, artist);
   const roundedDuration = Math.round(Number(duration) || 0);
   const exactRequest = axios.get(`${LRCLIB}/get`, {
     ...axiosOptions(signal),
-    params: { track_name: title, artist_name: artist || undefined, duration: roundedDuration || undefined },
+    params: { track_name: cleanTitle, artist_name: primaryArtist || artist || undefined, duration: roundedDuration || undefined },
   }).then((response) => response.data).catch(() => null);
 
-  const queries = [
+  const queries = [...new Set([
+    `${cleanTitle} ${primaryArtist || artist}`.trim(),
     `${title} ${artist}`.trim(),
-    title,
-  ];
+    cleanTitle,
+  ].filter(Boolean))];
   const searchRequests = queries.map((q) => axios.get(`${LRCLIB}/search`, {
     ...axiosOptions(signal), params: { q },
   }).then((response) => Array.isArray(response.data) ? response.data : []).catch(() => []));
 
   const [exact, ...searchResults] = await Promise.all([exactRequest, ...searchRequests]);
   if (exact && (exact.syncedLyrics || exact.plainLyrics)) {
-    const score = candidateScore(exact, title, artist, duration);
-    if (score >= 0.48) return formatLrclib(exact, duration);
+    const score = candidateScore(exact, cleanTitle, primaryArtist || artist, duration);
+    if (score >= 0.45) return formatLrclib(exact, duration);
   }
-  const candidate = chooseCandidate(searchResults.flat(), title, artist, duration);
+  const allCandidates = searchResults.flat().filter((item) => item && (item.syncedLyrics || item.plainLyrics));
+  const candidate = chooseCandidate(allCandidates, cleanTitle, primaryArtist || artist, duration);
   return candidate ? formatLrclib(candidate, duration) : null;
 }
 
 // 2. NetEase Provider (Geniş Asya ve Küresel Senkronize Arşiv)
 async function fetchNetease(title, artist, duration, signal) {
-  const query = `${title} ${artist || ''}`.trim();
-  const search = await axios.get(`${NETEASE}/api/search/get`, {
-    ...axiosOptions(signal, 2800),
-    params: { s: query, type: 1, limit: 8 },
-    headers: { ...axiosOptions(signal).headers, Referer: `${NETEASE}/` },
-  });
-  const songs = search.data?.result?.songs || [];
+  const { cleanTitle, primaryArtist } = splitArtistTitle(title, artist);
+  const query = `${cleanTitle} ${primaryArtist || artist || ''}`.trim();
+  const [cloudRes, legacyRes] = await Promise.all([
+    axios.get(`${NETEASE}/api/cloudsearch/pc`, {
+      ...axiosOptions(signal, 3000),
+      params: { s: query, type: 1, limit: 10 },
+      headers: { ...axiosOptions(signal).headers, Referer: `${NETEASE}/` },
+    }).catch(() => null),
+    axios.get(`${NETEASE}/api/search/get`, {
+      ...axiosOptions(signal, 3000),
+      params: { s: query, type: 1, limit: 10 },
+      headers: { ...axiosOptions(signal).headers, Referer: `${NETEASE}/` },
+    }).catch(() => null),
+  ]);
+
+  const songs = [
+    ...(cloudRes?.data?.result?.songs || []),
+    ...(legacyRes?.data?.result?.songs || []),
+  ];
+  if (!songs.length) return null;
+
   const candidates = songs.map((song) => ({
     trackName: song.name,
-    artistName: song.artists?.map((entry) => entry.name).join(' '),
-    duration: (Number(song.duration) || 0) / 1000,
+    artistName: (song.ar || song.artists || []).map((entry) => entry.name).join(' '),
+    duration: (Number(song.dt || song.duration) || 0) / 1000,
     id: song.id,
   }));
-  const chosen = chooseCandidate(candidates, title, artist, duration);
+  const chosen = chooseCandidate(candidates, cleanTitle, primaryArtist || artist, duration);
   if (!chosen) return null;
-  const song = songs.find((entry) => String(entry.id) === String(chosen.id));
-  if (!song) return null;
 
   const lyricResponse = await axios.get(`${NETEASE}/api/song/lyric`, {
-    ...axiosOptions(signal, 2800), params: { id: song.id, lv: -1, tv: -1 },
+    ...axiosOptions(signal, 2800), params: { id: chosen.id, lv: -1, tv: -1 },
     headers: { ...axiosOptions(signal).headers, Referer: `${NETEASE}/` },
-  });
-  const syncedLyrics = lyricResponse.data?.lrc?.lyric || null;
-  const plainLyrics = lyricResponse.data?.tlyric?.lyric || null;
-  if (!syncedLyrics && !plainLyrics) return null;
-  return { success: true, syncedLyrics, plainLyrics, source: syncedLyrics ? 'NetEase (Senkron)' : 'NetEase (Düz)' };
+  }).catch(() => null);
+  const rawLrc = String(lyricResponse?.data?.lrc?.lyric || '').trim();
+  const rawTlyric = String(lyricResponse?.data?.tlyric?.lyric || '').trim();
+  if (!rawLrc && !rawTlyric) return null;
+  const hasTimestamps = /\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/.test(rawLrc);
+  return {
+    success: true,
+    syncedLyrics: hasTimestamps ? rawLrc : null,
+    plainLyrics: hasTimestamps ? (rawTlyric || null) : (rawLrc || rawTlyric),
+    source: hasTimestamps ? 'NetEase (Senkron)' : 'NetEase (Düz)',
+  };
 }
 
 // 3. Kugou Provider (Milyonlarca senkronize .LRC)
 async function fetchKugou(title, artist, duration, signal) {
   try {
-    const query = `${title} ${artist || ''}`.trim();
-    const searchRes = await axios.get(KUGOU_SEARCH, {
-      ...axiosOptions(signal, 3000),
-      params: { keyword: query, page: 1, pagesize: 5, clientver: '' },
-    });
-    const songList = searchRes.data?.data?.lists || [];
-    if (!songList.length) return null;
+    const { cleanTitle, primaryArtist } = splitArtistTitle(title, artist);
+    const queries = [...new Set([
+      `${primaryArtist || artist} ${cleanTitle}`.trim(),
+      `${cleanTitle} ${primaryArtist || artist}`.trim(),
+      cleanTitle,
+    ].filter(Boolean))];
 
-    const topSongs = songList.slice(0, 3);
-    for (const song of topSongs) {
-      if (!song.FileHash) continue;
+    const songList = [];
+    for (const keyword of queries) {
+      const [mobileRes, desktopRes] = await Promise.all([
+        axios.get(KUGOU_MOBILE_SEARCH, {
+          ...axiosOptions(signal, 2800),
+          params: { format: 'json', keyword, page: 1, pagesize: 8, showtype: 1 },
+        }).catch(() => null),
+        axios.get(KUGOU_SEARCH, {
+          ...axiosOptions(signal, 2800),
+          params: { keyword, page: 1, pagesize: 6, clientver: '' },
+        }).catch(() => null),
+      ]);
+      const mobileSongs = (mobileRes?.data?.data?.info || []).map((s) => ({
+        hash: s.hash || s.FileHash,
+        duration: Number(s.duration || s.Duration) || 0,
+        filename: s.filename || s.FileName || `${s.singername || ''} - ${s.songname || ''}`,
+        songname: s.songname || cleanTitle,
+        singername: s.singername || primaryArtist,
+      }));
+      const desktopSongs = (desktopRes?.data?.data?.lists || []).map((s) => ({
+        hash: s.FileHash || s.hash,
+        duration: Number(s.Duration || s.duration) || 0,
+        filename: s.FileName || s.filename || '',
+        songname: s.SongName || cleanTitle,
+        singername: s.SingerName || primaryArtist,
+      }));
+      songList.push(...mobileSongs, ...desktopSongs);
+      if (songList.length >= 6) break;
+    }
+
+    const scoredSongs = songList
+      .filter((s) => s.hash)
+      .map((s) => ({
+        song: s,
+        score: Math.max(
+          titleSimilarity(cleanTitle, s.songname),
+          titleSimilarity(`${primaryArtist} ${cleanTitle}`, s.filename)
+        ),
+      }))
+      .filter((entry) => entry.score >= 0.38)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4);
+
+    for (const { song } of scoredSongs) {
       const lrcSearch = await axios.get(KUGOU_LRC_SEARCH, {
         ...axiosOptions(signal, 2500),
-        params: { ver: 1, man: 'yes', client: 'pc', hash: song.FileHash, duration: (song.Duration || 0) * 1000 },
+        params: {
+          ver: 1,
+          man: 'yes',
+          client: 'pc',
+          keyword: song.filename || `${primaryArtist} - ${cleanTitle}`,
+          hash: song.hash,
+          duration: (song.duration || Number(duration) || 0) * 1000,
+        },
         headers: { ...axiosOptions(signal).headers, 'User-Agent': 'KuGou' },
       }).catch(() => null);
 
@@ -190,7 +340,7 @@ async function fetchKugou(title, artist, duration, signal) {
       const base64Content = dl?.data?.content || '';
       if (!base64Content) continue;
       const decodedLrc = Buffer.from(base64Content, 'base64').toString('utf8').trim();
-      if (decodedLrc && decodedLrc.includes('[')) {
+      if (decodedLrc && /\[\d{1,2}:\d{2}/.test(decodedLrc)) {
         return {
           success: true,
           syncedLyrics: decodedLrc,
@@ -205,82 +355,215 @@ async function fetchKugou(title, artist, duration, signal) {
   }
 }
 
-// 4. Gerçek Genius API & Web Scraper (Özellikle Türkçe Şarkıların %98'ini Kapsar)
-function cleanGeniusLyrics(html) {
-  const regex = /<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/gi;
+// 4. Gerçek Genius API & Web Scraper + Yerli Türkçe Söz Arşivi (SarkiSozum)
+// Doğrudan dengeli <div> ayrıştırıcı: iç içe LyricsHeader div'lerinde kesilmez.
+function extractBalancedDivsByAttribute(html, attributeFragment) {
+  const results = [];
+  let searchPos = 0;
+  const openTagRegex = new RegExp(`<div\\b[^>]*${attributeFragment}[^>]*>`, 'gi');
   let match;
-  const parts = [];
-  while ((match = regex.exec(html)) !== null) {
-    const clean = match[1]
-      .replace(/<br\s*[\/]?>/gi, '\n')
+  while ((match = openTagRegex.exec(html)) !== null) {
+    const contentStart = match.index + match[0].length;
+    let depth = 1;
+    const tagScan = /<\/?div\b[^>]*>/gi;
+    tagScan.lastIndex = contentStart;
+    let scanMatch;
+    while (depth > 0 && (scanMatch = tagScan.exec(html)) !== null) {
+      if (scanMatch[0].startsWith('</')) depth -= 1;
+      else if (!scanMatch[0].endsWith('/>')) depth += 1;
+      if (depth === 0) {
+        results.push(html.slice(contentStart, scanMatch.index));
+        searchPos = tagScan.lastIndex;
+        openTagRegex.lastIndex = searchPos;
+      }
+    }
+  }
+  return results;
+}
+
+function stripExcludedSelectionDivs(fragment) {
+  const excluded = extractBalancedDivsByAttribute(fragment, 'data-exclude-from-selection="true"');
+  let output = fragment;
+  for (const block of excluded) {
+    output = output.replace(block, '');
+  }
+  return output.replace(/<div\b[^>]*data-exclude-from-selection="true"[^>]*>\s*<\/div>/gi, '');
+}
+
+function cleanGeniusLyrics(html) {
+  const containers = extractBalancedDivsByAttribute(html, 'data-lyrics-container="true"');
+  if (!containers.length) return '';
+  const parts = containers.map((raw) => {
+    const cleaned = stripExcludedSelectionDivs(raw)
+      .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n\n')
       .replace(/<[^>]+>/g, '');
-    parts.push(clean);
-  }
-  let text = parts.join('\n')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .trim();
+    return decodeHtmlEntities(cleaned);
+  });
 
-  // Genius meta metinlerini ve sayaçları temizle
+  let text = parts.join('\n').trim();
   text = text.replace(/^[0-9]+\s+Contributors[\s\S]*?Lyrics\s*/i, '');
   text = text.replace(/^[0-9]+\s+Contributors[^\n]*\n?/i, '');
-  text = text.replace(/Embed$/i, '').trim();
-  return text;
+  text = text.replace(/^[^\n]{1,120}\s+Lyrics\s*\n+/i, '');
+  text = text.replace(/You might also like/gi, '');
+  text = text.replace(/\d*\s*Embed$/i, '').trim();
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function fetchGeniusHtml(url, signal) {
+  try {
+    const res = await axios.get(url, {
+      timeout: 3200,
+      signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    if (res?.data) return typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+  } catch {}
+  return curlFetch(url, signal, 4500);
+}
+
+// Yerli Türkçe şarkı sözü arşivi (SarkiSozum.gen.tr)
+async function fetchTurkishSarkisozum(title, artist, signal) {
+  try {
+    const { cleanTitle, primaryArtist } = splitArtistTitle(title, artist);
+    const slugify = (v) => normalize(v).replace(/\s+/g, '-');
+    const artistSlug = slugify(primaryArtist || artist);
+    const titleSlug = slugify(cleanTitle);
+
+    const candidateUrls = [];
+    if (artistSlug && titleSlug) {
+      candidateUrls.push(`${SARKISOZUM_BASE}/${artistSlug}/${titleSlug}-sarkisozu`);
+    }
+
+    const searchQueries = [...new Set([
+      `${primaryArtist} ${cleanTitle}`.trim(),
+      cleanTitle,
+      primaryArtist,
+    ].filter(Boolean))];
+
+    for (const q of searchQueries.slice(0, 2)) {
+      const searchRes = await axios.get(`${SARKISOZUM_BASE}/arama/`, {
+        ...axiosOptions(signal, 3000),
+        params: { q },
+      }).catch(() => null);
+      const html = String(searchRes?.data || '');
+      const links = [...html.matchAll(/href="(https:\/\/www\.sarkisozum\.gen\.tr\/[^"]+-sarkisozu)"/gi)]
+        .map((m) => m[1]);
+      for (const link of links) {
+        if (!candidateUrls.includes(link)) candidateUrls.push(link);
+      }
+      if (candidateUrls.length >= 4) break;
+    }
+
+    const scoredUrls = candidateUrls
+      .map((url) => {
+        const slugPart = url.replace(SARKISOZUM_BASE, '').replace(/-sarkisozu$/, '').replace(/\//g, ' ');
+        const score = titleSimilarity(`${primaryArtist} ${cleanTitle}`, slugPart) * 0.7
+          + titleSimilarity(cleanTitle, slugPart) * 0.3;
+        return { url, score };
+      })
+      .filter((item) => item.score >= 0.35)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+
+    for (const { url } of scoredUrls) {
+      const pageRes = await axios.get(url, axiosOptions(signal, 3000)).catch(() => null);
+      const html = String(pageRes?.data || '');
+      if (!html) continue;
+      const blocks = [...html.matchAll(/<div[^>]*>([\s\S]*?)<\/div>/gi)]
+        .map((m) => m[1])
+        .filter((b) => (b.match(/<br\s*\/?>/gi) || []).length >= 5 && b.length < 12000 && !/<script|<ins/i.test(b));
+      if (!blocks.length) continue;
+      const rawBlock = blocks[blocks.length - 1];
+      const lyricsText = decodeHtmlEntities(
+        rawBlock
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n\n')
+          .replace(/<[^>]+>/g, '')
+      )
+        .split('\n')
+        .map((line) => line.trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      if (lyricsText.length >= 40) {
+        return {
+          success: true,
+          syncedLyrics: null,
+          plainLyrics: lyricsText,
+          source: 'Genius · TR Arşiv (Düz)',
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchGenius(title, artist, signal) {
   try {
-    const queries = [
+    const { cleanTitle, primaryArtist } = splitArtistTitle(title, artist);
+    const queries = [...new Set([
+      `${primaryArtist || artist} ${cleanTitle}`.trim(),
+      `${cleanTitle} ${primaryArtist || artist}`.trim(),
       `${title} ${artist || ''}`.trim(),
-      artist ? `${artist} ${title}` : title,
-    ];
-    let songHit = null;
+      cleanTitle,
+    ].filter(Boolean))];
+
+    let bestHit = null;
+    let bestScore = 0;
 
     for (const q of queries) {
-      const searchRes = await axios.get(GENIUS_SEARCH, {
-        timeout: 3200,
-        signal,
-        params: { q },
-        headers: {
-          'User-Agent': 'Genius/2.3.0 (Android; 10; Scale/2.0)',
-          'Accept': 'application/json',
-        },
-      }).catch(() => null);
+      const rawJson = await fetchGeniusHtml(`${GENIUS_SEARCH}?q=${encodeURIComponent(q)}`, signal);
+      if (!rawJson) continue;
+      let parsed = null;
+      try { parsed = JSON.parse(rawJson); } catch { parsed = null; }
+      const sections = parsed?.response?.sections || [];
+      const hits = [
+        ...(sections.find((sec) => sec.type === 'song')?.hits || []),
+        ...(sections.find((sec) => sec.type === 'top_hit')?.hits?.filter((h) => h.type === 'song') || []),
+      ];
+      for (const entry of hits) {
+        const result = entry?.result;
+        if (!result?.url || !/lyrics$/i.test(result.url)) continue;
+        const score = candidateScore(
+          { trackName: result.title || result.full_title, artistName: result.primary_artist?.name || result.artist_names },
+          cleanTitle,
+          primaryArtist || artist,
+          0
+        );
+        if (score > bestScore) {
+          bestScore = score;
+          bestHit = result;
+        }
+      }
+      if (bestHit && bestScore >= 0.45) break;
+    }
 
-      const songSection = searchRes?.data?.response?.sections?.find((sec) => sec.type === 'song');
-      const hits = songSection?.hits || [];
-      if (hits.length > 0 && hits[0].result?.url) {
-        songHit = hits[0].result;
-        break;
+    if (bestHit?.url && bestScore >= 0.35) {
+      const pageHtml = await fetchGeniusHtml(bestHit.url, signal);
+      if (pageHtml) {
+        const lyricsText = cleanGeniusLyrics(pageHtml);
+        if (lyricsText && lyricsText.length >= 25) {
+          return {
+            success: true,
+            syncedLyrics: null,
+            plainLyrics: lyricsText,
+            source: 'Genius (Düz)',
+          };
+        }
       }
     }
 
-    if (!songHit?.url) return null;
-
-    const pageRes = await axios.get(songHit.url, {
-      timeout: 3500,
-      signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-    }).catch(() => null);
-
-    if (!pageRes?.data) return null;
-
-    const lyricsText = cleanGeniusLyrics(pageRes.data);
-    if (!lyricsText || lyricsText.length < 20) return null;
-
-    return {
-      success: true,
-      syncedLyrics: null,
-      plainLyrics: lyricsText,
-      source: 'Genius (Düz)',
-    };
+    // Genius'ta bulunamazsa yerli Türkçe söz arşivini (SarkiSozum) dene
+    const trFallback = await fetchTurkishSarkisozum(title, artist, signal);
+    if (trFallback) return trFallback;
+    return null;
   } catch {
     return null;
   }
@@ -288,9 +571,11 @@ async function fetchGenius(title, artist, signal) {
 
 // 5. Lyrics.ovh Fallback Provider
 async function fetchLyricsOvh(title, artist, signal) {
-  if (!artist) return null;
+  const { cleanTitle, primaryArtist } = splitArtistTitle(title, artist);
+  const targetArtist = primaryArtist || artist;
+  if (!targetArtist) return null;
   try {
-    const response = await axios.get(`${LYRICS_OVH}/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`, axiosOptions(signal, 2500));
+    const response = await axios.get(`${LYRICS_OVH}/${encodeURIComponent(targetArtist)}/${encodeURIComponent(cleanTitle)}`, axiosOptions(signal, 3000));
     const lyrics = String(response.data?.lyrics || '').trim();
     return lyrics ? { success: true, syncedLyrics: null, plainLyrics: lyrics, source: 'Lyrics.ovh (Düz)' } : null;
   } catch {
@@ -325,14 +610,14 @@ async function findLyrics(title, artist, duration, source, signal) {
   }
 
   // AUTO MODU: Akıllı Çok Katmanlı Şarkı Sözü Bulma
-  // 1. Senkron Arayıcılar (LRCLIB, NetEase, Kugou)
+  // 1. Senkron Arayıcılar (LRCLIB, Kugou, NetEase)
   const syncProviders = [
     () => fetchLrclib(title, artist, duration, signal),
     () => fetchKugou(title, artist, duration, signal),
     () => fetchNetease(title, artist, duration, signal),
   ];
 
-  // 2. Kapsamlı Düz Metin Arayıcılar (Genius - Türkiye & Global Arşiv, Lyrics.ovh)
+  // 2. Kapsamlı Düz Metin Arayıcılar (Genius + TR Arşiv, Lyrics.ovh)
   const plainProviders = [
     () => fetchGenius(title, artist, signal),
     () => fetchLyricsOvh(title, artist, signal),
@@ -350,7 +635,7 @@ async function findLyrics(title, artist, duration, source, signal) {
 
   const timedSynced = await Promise.race([
     firstSyncedPromise,
-    new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+    new Promise((resolve) => setTimeout(() => resolve(null), 3200)),
   ]);
 
   if (signal?.aborted) throw new axios.CanceledError('Lyrics request cancelled');
