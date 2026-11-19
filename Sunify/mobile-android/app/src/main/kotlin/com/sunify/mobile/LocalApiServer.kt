@@ -273,7 +273,7 @@ class LocalApiServer(
                 else -> jsonResponse(Response.Status.OK, JSONObject().put("ok", true))
             }
         } catch (e: Exception) {
-            errorResponse(Response.Status.BAD_GATEWAY, e.message ?: "İşlem başarısız.")
+            errorResponse(Response.Status.INTERNAL_ERROR, e.message ?: "İşlem başarısız.")
         }
     }
 
@@ -293,13 +293,13 @@ class LocalApiServer(
         val upstream = OkHttpDownloader.sharedClient.newCall(reqBuilder.build()).execute()
         if (!upstream.isSuccessful && upstream.code != 206) {
             upstream.close()
-            return errorResponse(Response.Status.BAD_GATEWAY, "Ses akışı başlatılamadı (${upstream.code}).")
+            return errorResponse(Response.Status.INTERNAL_ERROR, "Ses akışı başlatılamadı (${upstream.code}).")
         }
 
         val status = if (upstream.code == 206) Response.Status.PARTIAL_CONTENT else Response.Status.OK
         val contentType = upstream.header("Content-Type") ?: stream.mimeType
         val contentLength = upstream.header("Content-Length")?.toLongOrNull() ?: -1L
-        val bodyStream = upstream.body?.byteStream() ?: return errorResponse(Response.Status.BAD_GATEWAY, "Boş ses akışı.")
+        val bodyStream = upstream.body?.byteStream() ?: return errorResponse(Response.Status.INTERNAL_ERROR, "Boş ses akışı.")
 
         val resp = if (contentLength >= 0) {
             newFixedLengthResponse(status, contentType, bodyStream, contentLength)
