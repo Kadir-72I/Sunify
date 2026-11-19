@@ -103,16 +103,27 @@ function candidateScore(candidate, title, artist, duration) {
     titleSimilarity(title, candidate.trackName || candidate.name),
     titleSimilarity(cleanTitle, candidate.trackName || candidate.name)
   );
+  const wantedArtist = normalize(primaryArtist || artist);
+  const candidateArtist = normalize(candidate.artistName || candidate.artist);
   const artistScore = Math.max(
     titleSimilarity(artist, candidate.artistName || candidate.artist),
     titleSimilarity(primaryArtist, candidate.artistName || candidate.artist)
   );
+  // Sanatçı biliniyorsa ve adayın sanatçısı tamamen farklıysa (örn. Massaka yerine
+  // aynı isimli başka bir sanatçının şarkısı), bu adayı kesinlikle reddet!
+  if (wantedArtist && candidateArtist && artistScore < 0.35) {
+    return 0;
+  }
   const candidateDuration = Number(candidate.duration) || 0;
   const wantedDuration = Number(duration) || 0;
+  // Şarkı süresi biliniyorsa ve adayın süresi 28 saniyeden fazla sapıyorsa (farklı şarkı/versiyon)
+  if (candidateDuration > 0 && wantedDuration > 0 && Math.abs(candidateDuration - wantedDuration) > 28) {
+    return 0;
+  }
   const durationScore = candidateDuration && wantedDuration
     ? Math.max(0, 1 - Math.abs(candidateDuration - wantedDuration) / Math.max(12, wantedDuration * 0.22))
     : 0.5;
-  return titleScore * 0.64 + artistScore * 0.25 + durationScore * 0.11;
+  return titleScore * 0.58 + artistScore * 0.30 + durationScore * 0.12;
 }
 
 function chooseCandidate(candidates, title, artist, duration) {
@@ -253,12 +264,21 @@ async function fetchNetease(title, artist, duration, signal) {
   const rawLrc = String(lyricResponse?.data?.lrc?.lyric || '').trim();
   const rawTlyric = String(lyricResponse?.data?.tlyric?.lyric || '').trim();
   if (!rawLrc && !rawTlyric) return null;
-  const hasTimestamps = /\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/.test(rawLrc);
+  const cleanedLrc = rawLrc
+    .split(/\r?\n/)
+    .filter((line) => !/\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]\s*(?:作词|作曲|编曲|制作人|混音|母带|录音|出品|词\s*:|曲\s*:)/i.test(line))
+    .join('\n')
+    .trim();
+  const hasTimestamps = /\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/.test(cleanedLrc);
+  const durationGap = Number(duration) && Number(chosen.duration)
+    ? Math.abs(Number(duration) - Number(chosen.duration))
+    : 0;
   return {
     success: true,
-    syncedLyrics: hasTimestamps ? rawLrc : null,
-    plainLyrics: hasTimestamps ? (rawTlyric || null) : (rawLrc || rawTlyric),
+    syncedLyrics: hasTimestamps ? cleanedLrc : null,
+    plainLyrics: hasTimestamps ? (rawTlyric || null) : (cleanedLrc || rawTlyric),
     source: hasTimestamps ? 'NetEase (Senkron)' : 'NetEase (Düz)',
+    durationGap,
   };
 }
 
@@ -306,12 +326,14 @@ async function fetchKugou(title, artist, duration, signal) {
       .filter((s) => s.hash)
       .map((s) => ({
         song: s,
-        score: Math.max(
-          titleSimilarity(cleanTitle, s.songname),
-          titleSimilarity(`${primaryArtist} ${cleanTitle}`, s.filename)
+        score: candidateScore(
+          { trackName: s.songname, artistName: s.singername, duration: s.duration },
+          cleanTitle,
+          primaryArtist || artist,
+          duration
         ),
       }))
-      .filter((entry) => entry.score >= 0.38)
+      .filter((entry) => entry.score >= 0.55)
       .sort((a, b) => b.score - a.score)
       .slice(0, 4);
 
@@ -331,6 +353,9 @@ async function fetchKugou(title, artist, duration, signal) {
 
       const candidate = lrcSearch?.data?.candidates?.[0];
       if (!candidate?.id || !candidate?.accesskey) continue;
+      if (candidate.singer && (primaryArtist || artist) && titleSimilarity(primaryArtist || artist, candidate.singer) < 0.35) {
+        continue;
+      }
 
       const dl = await axios.get(KUGOU_LRC_DOWNLOAD, {
         ...axiosOptions(signal, 2500),
@@ -340,12 +365,20 @@ async function fetchKugou(title, artist, duration, signal) {
       const base64Content = dl?.data?.content || '';
       if (!base64Content) continue;
       const decodedLrc = Buffer.from(base64Content, 'base64').toString('utf8').trim();
+      const lrcArMatch = decodedLrc.match(/\[ar:([^\]]+)\]/i);
+      if (lrcArMatch && (primaryArtist || artist) && !/^\d+$/.test(lrcArMatch[1].trim())) {
+        if (titleSimilarity(primaryArtist || artist, lrcArMatch[1]) < 0.3) continue;
+      }
       if (decodedLrc && /\[\d{1,2}:\d{2}/.test(decodedLrc)) {
+        const durationGap = Number(duration) && Number(song.duration)
+          ? Math.abs(Number(duration) - Number(song.duration))
+          : 0;
         return {
           success: true,
           syncedLyrics: decodedLrc,
           plainLyrics: null,
           source: 'Kugou (Senkron)',
+          durationGap,
         };
       }
     }

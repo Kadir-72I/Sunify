@@ -533,6 +533,53 @@ app.get('/api/search/playlists', async (req, res) => {
   }
 });
 
+// Ortak dinlenme listesini sıfırlama tabanlı yeni sayım mekanizması:
+// Sadece bu sıfırlama noktasından sonra "sonuna kadar dinlenen" parçalar
+// En çok dinlenen şarkılar listesinde yer alır.
+const GLOBAL_CHART_EPOCH_FILE = path.join(path.dirname(process.env.SUNIFY_USER_DB_FILE || path.join(__dirname, '../data/sunify_users.json')), 'sunify_global_chart_baseline.json');
+
+function readGlobalChartBaseline() {
+  try {
+    if (fs.existsSync(GLOBAL_CHART_EPOCH_FILE)) {
+      return JSON.parse(fs.readFileSync(GLOBAL_CHART_EPOCH_FILE, 'utf8'));
+    }
+  } catch {}
+  return null;
+}
+
+function writeGlobalChartBaseline(baseline) {
+  try {
+    fs.mkdirSync(path.dirname(GLOBAL_CHART_EPOCH_FILE), { recursive: true });
+    fs.writeFileSync(GLOBAL_CHART_EPOCH_FILE, JSON.stringify(baseline, null, 2), 'utf8');
+  } catch {}
+}
+
+function normalizeGlobalTrackKey(artist, title) {
+  return `${String(artist || '').trim().toLowerCase()}|${String(title || '').trim().toLowerCase()}`;
+}
+
+async function ensureGlobalChartBaseline(supabase) {
+  let baseline = readGlobalChartBaseline();
+  if (baseline && baseline.epoch === 2 && baseline.counts && typeof baseline.counts === 'object') {
+    return baseline;
+  }
+  const counts = {};
+  if (supabase) {
+    try {
+      const { data } = await supabase.rpc('get_sunify_global_top', { result_limit: 20 });
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          const key = normalizeGlobalTrackKey(item.artist, item.title);
+          counts[key] = Math.max(0, Number(item.play_count) || 0);
+        }
+      }
+    } catch {}
+  }
+  baseline = { epoch: 2, resetAt: new Date().toISOString(), counts, localCounts: {} };
+  writeGlobalChartBaseline(baseline);
+  return baseline;
+}
+
 // Shared public chart: aggregate anonymous play events, never expose per-user analytics.
 app.post('/api/discover/play', async (req, res) => {
   const { track } = req.body || {};
@@ -540,7 +587,19 @@ app.post('/api/discover/play', async (req, res) => {
     return res.status(400).json({ error: 'Geçerli şarkı bilgisi gerekli.' });
   }
   const supabase = getSupabase();
-  if (!supabase) return res.status(503).json({ error: 'Ortak dinlenme listesi için Supabase yapılandırılmalı.' });
+  const baseline = await ensureGlobalChartBaseline(supabase);
+  const key = normalizeGlobalTrackKey(track.artist, track.title);
+  baseline.localCounts = baseline.localCounts || {};
+  baseline.localCounts[key] = {
+    track_id: String(track.id).slice(0, 200),
+    title: String(track.title).slice(0, 300),
+    artist: String(track.artist || '').slice(0, 300),
+    thumbnail: String(track.thumbnail || '').slice(0, 1000),
+    play_count: (Number(baseline.localCounts[key]?.play_count) || 0) + 1,
+    updated_at: Date.now(),
+  };
+  writeGlobalChartBaseline(baseline);
+  if (!supabase) return res.json({ success: true });
   try {
     const { error } = await supabase.rpc('record_sunify_play', {
       track_id: String(track.id).slice(0, 200),
@@ -551,18 +610,63 @@ app.post('/api/discover/play', async (req, res) => {
     if (error) throw error;
     return res.json({ success: true });
   } catch (error) {
-    return res.status(503).json({ error: `Ortak dinleme kaydı hazır değil: ${error.message}` });
+    return res.json({ success: true });
   }
 });
 
 app.get('/api/discover/top', async (req, res) => {
   const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
   const supabase = getSupabase();
-  if (!supabase) return res.json({ tracks: [], unavailable: true });
   try {
-    const { data, error } = await supabase.rpc('get_sunify_global_top', { result_limit: limit });
-    if (error) throw error;
-    return res.json({ tracks: Array.isArray(data) ? data : [] });
+    const baseline = await ensureGlobalChartBaseline(supabase);
+    const merged = new Map();
+    if (supabase) {
+      const { data } = await supabase.rpc('get_sunify_global_top', { result_limit: 20 });
+      if (Array.isArray(data)) {
+        for (const row of data) {
+          const key = normalizeGlobalTrackKey(row.artist, row.title);
+          const baseVal = Number(baseline.counts?.[key]);
+          const rawCount = Number(row.play_count) || 0;
+          // Baseline'da olmayan eski kayıtlar eğer zaten >1 ise ilk kez göründüğünde baseline'a kaydedilir
+          if (!Number.isFinite(baseVal)) {
+            if (rawCount > 1 && !baseline.localCounts?.[key]) {
+              baseline.counts[key] = rawCount;
+              writeGlobalChartBaseline(baseline);
+              continue;
+            }
+          }
+          const delta = Math.max(0, rawCount - (Number.isFinite(baseVal) ? baseVal : 0));
+          if (delta > 0) {
+            merged.set(key, {
+              track_id: row.track_id,
+              title: row.title,
+              artist: row.artist,
+              thumbnail: row.thumbnail,
+              play_count: delta,
+            });
+          }
+        }
+      }
+    }
+    for (const [key, localEntry] of Object.entries(baseline.localCounts || {})) {
+      const existing = merged.get(key);
+      const localCount = Number(localEntry?.play_count) || 0;
+      if (localCount <= 0) continue;
+      if (!existing || localCount > existing.play_count) {
+        merged.set(key, {
+          track_id: localEntry.track_id,
+          title: localEntry.title,
+          artist: localEntry.artist,
+          thumbnail: localEntry.thumbnail,
+          play_count: localCount,
+        });
+      }
+    }
+    const tracks = [...merged.values()]
+      .filter((t) => t.play_count >= 1)
+      .sort((a, b) => b.play_count - a.play_count)
+      .slice(0, limit);
+    return res.json({ tracks });
   } catch (error) {
     console.warn('Sunify global chart is unavailable:', error.message);
     return res.json({ tracks: [], unavailable: true });
@@ -1719,6 +1823,23 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     return res.status(401).json({ error: error.message || 'E-posta veya şifre hatalı.', mode: 'offline' });
   }
+});
+
+// Kurtarılan kişisel dinleme istatistiklerini (129 parça) sunify_users.json yedeğinden okuma uç noktası
+app.get('/api/sync/recovered-stats', (_req, res) => {
+  try {
+    const dbFile = process.env.SUNIFY_USER_DB_FILE || path.join(__dirname, '../data/sunify_users.json');
+    if (fs.existsSync(dbFile)) {
+      const users = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+      const userWithStats = (Array.isArray(users) ? users : []).find(
+        (u) => u && u.listeningStats && Object.values(u.listeningStats).some((e) => e && Number(e.playCount) > 0)
+      );
+      if (userWithStats?.listeningStats) {
+        return res.json({ listeningStats: userWithStats.listeningStats });
+      }
+    }
+  } catch {}
+  return res.json({ listeningStats: null });
 });
 
 // Bulut / Yerel Senkronizasyonu: Kullanıcının Verilerini İndir

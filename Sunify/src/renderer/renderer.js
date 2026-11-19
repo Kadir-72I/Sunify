@@ -440,29 +440,43 @@ const dailyMixCache = new Map();
 const dailyMixInFlight = new Map();
 let dailyMixRenderRequest = 0;
 
-// Dinleme sayısı sürüm 2: sayaç yalnızca şarkı atlanmadan sonuna kadar
-// dinlendiğinde artar. Eski (her tıklamada artan) sayılar bir kez sıfırlanır;
-// bu işaret buluttan gelen eski verilere de uygulanır.
-const LISTEN_COUNT_VERSION = 2;
-function migrateListenCounts(analytics) {
-  if (!analytics || typeof analytics !== 'object') return { analytics: {}, changed: false };
-  let changed = false;
-  Object.values(analytics).forEach((entry) => {
-    if (!entry || typeof entry !== 'object' || entry.countVersion === LISTEN_COUNT_VERSION) return;
-    entry.playCount = 0;
-    entry.totalSeconds = 0;
-    entry.days = [];
-    entry.countVersion = LISTEN_COUNT_VERSION;
-    changed = true;
-  });
-  return { analytics, changed };
-}
+// Kişisel dinleme istatistiklerini (Daily Mixes, Dinleme Özeti, Sanatçı Dinlemeleri)
+// koru; yanlışlıkla sıfırlanmışsa yerel sunify_users.json yedeğinden otomatik geri yükle.
+const LISTEN_COUNT_VERSION = 3;
+let statsRecoveryInFlight = null;
 function applyListenCountMigration() {
-  const result = migrateListenCounts(trackAnalytics);
-  trackAnalytics = result.analytics;
-  if (result.changed) writeAccountJson('sunify_track_analytics', trackAnalytics);
+  if (!trackAnalytics || typeof trackAnalytics !== 'object') trackAnalytics = {};
+  const entries = Object.values(trackAnalytics).filter((e) => e && typeof e === 'object');
+  const hasActiveStats = entries.some((e) => (Number(e.playCount) || 0) > 0);
+  if (hasActiveStats || statsRecoveryInFlight) return;
+  statsRecoveryInFlight = fetch(`${API_BASE}/sync/recovered-stats`)
+    .then((r) => r.json())
+    .then((data) => {
+      const recovered = data?.listeningStats;
+      if (!recovered || typeof recovered !== 'object') return;
+      const recEntries = Object.values(recovered);
+      if (!recEntries.some((e) => e && (Number(e.playCount) || 0) > 0)) return;
+      for (const [k, v] of Object.entries(recovered)) {
+        if (!v || typeof v !== 'object') continue;
+        const cur = trackAnalytics[k] || {};
+        trackAnalytics[k] = {
+          ...cur,
+          ...v,
+          playCount: Math.max(Number(v.playCount) || 0, Number(cur.playCount) || 0),
+          totalSeconds: Math.max(Number(v.totalSeconds) || 0, Number(cur.totalSeconds) || 0),
+          days: Array.isArray(v.days) && v.days.length ? v.days : (cur.days || []),
+          countVersion: LISTEN_COUNT_VERSION,
+        };
+      }
+      writeAccountJson('sunify_track_analytics', trackAnalytics);
+      writeAccountJson('sunify_listening_stats', trackAnalytics);
+      renderDailyMixes();
+      renderListeningStats();
+    })
+    .catch(() => {})
+    .finally(() => { statsRecoveryInFlight = null; });
 }
-applyListenCountMigration();
+setTimeout(() => applyListenCountMigration(), 400);
 
 function ensureTrackAnalyticsEntry(track) {
   const key = `${track.artist || ''} - ${track.title}`.trim().toLowerCase();
@@ -3675,7 +3689,7 @@ async function loadTrackLyrics(title, artist, duration, preferredSource = 'auto'
   if (lyricsCurrentSourceBadge) lyricsCurrentSourceBadge.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Kaynak aranıyor';
 
   const requestSource = async (source) => {
-    const offlineKey = `sunify_offline_lyrics_${String(artist || '').trim().toLowerCase()}_${String(title || '').trim().toLowerCase()}_${source}`;
+    const offlineKey = `sunify_offline_lyrics_v2_${String(artist || '').trim().toLowerCase()}_${String(title || '').trim().toLowerCase()}_${source}`;
     try {
       const params = new URLSearchParams({ title: title || '', artist: artist || '', duration: String(Number(duration) || ''), source });
       const response = await fetch(`${API_BASE}/lyrics?${params.toString()}`, { signal: controller.signal });
@@ -3835,12 +3849,15 @@ function updateLyricInstrumentalGaps(currentTime) {
     activeInstrumentalGap = nextActiveGap;
     if (activeInstrumentalGap) {
       activeInstrumentalGap.classList.add('active');
-      const container = lyricsLinesContainer;
-      const containerRect = container.getBoundingClientRect();
-      const noteRect = activeInstrumentalGap.getBoundingClientRect();
-      const target = container.scrollTop + noteRect.top - containerRect.top - container.clientHeight * 0.5;
-      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-      container.scrollTo({ top: Math.max(0, Math.min(maxScroll, target)), behavior: 'smooth' });
+      // Şarkının başındaki intro boşluğunda (start === 0) sözleri aşağı kaydırma, en üstte kalsın
+      if (candidate && candidate.start > 0) {
+        const container = lyricsLinesContainer;
+        const containerRect = container.getBoundingClientRect();
+        const noteRect = activeInstrumentalGap.getBoundingClientRect();
+        const target = container.scrollTop + noteRect.top - containerRect.top - container.clientHeight * 0.5;
+        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+        container.scrollTo({ top: Math.max(0, Math.min(maxScroll, target)), behavior: 'smooth' });
+      }
     }
   }
 
@@ -3984,7 +4001,9 @@ function syncActiveLyric(rawTime) {
     }
     activeLyricIndex = activeIndex;
     activeLyricWordIndex = activeWordIndex;
-    if (activeIndex >= 0) {
+    if (activeIndex < 0) {
+      lyricsLinesContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (activeIndex >= 0) {
       const activeEl = renderedLyricLines[activeIndex]?.element;
       if (activeEl) {
         const container = lyricsLinesContainer;
