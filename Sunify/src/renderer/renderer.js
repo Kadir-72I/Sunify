@@ -2621,48 +2621,21 @@ function addToRecentHistory(track) {
 
 function renderRecentHistory() {
   const container = document.getElementById('continueCards');
-  const section = container?.closest('.hm-continue-section');
   if (!container) return;
   if (recentHistory.length === 0) {
-    if (section) section.hidden = true;
-    container.innerHTML = '';
+    container.innerHTML =
+      '<p class="hm-empty">Henüz dinlediğin bir şarkı yok. Bir şarkı başlatıldığında otomatik olarak buraya kaydedilecek!</p>';
+    updateContinueCarousel();
     return;
   }
-  if (section) section.hidden = false;
 
   container.innerHTML = '';
-  recentHistory.slice(0, 6).forEach((track, index) => {
-    const mini = document.createElement('article');
-    mini.className = 'hm-continue-mini';
-    mini.tabIndex = 0;
-    mini.setAttribute('role', 'button');
-    mini.dataset.trackTitle = track.title || '';
-    mini.dataset.trackArtist = track.artist || '';
-    mini.__sunifyTrack = track;
-    mini.__sunifyTrackList = recentHistory;
-    mini.__sunifyTrackIndex = index;
-    mini.innerHTML = `
-      <img class="hm-continue-mini-thumb" alt="">
-      <div class="hm-continue-mini-meta">
-        <strong></strong>
-        <span class="hm-cover-artist"></span>
-      </div>
-      <span class="hm-continue-mini-play" aria-hidden="true"><i class="fa-solid fa-play"></i></span>
-    `;
-    mini.querySelector('img').src = track.thumbnail || PLACEHOLDER_COVER;
-    mini.querySelector('strong').textContent = track.title || '';
-    mini.querySelector('.hm-cover-artist').textContent = track.artist || '';
-    const onPlay = () => activatePlaylistTrack(track, recentHistory, index);
-    mini.onclick = onPlay;
-    mini.ondblclick = () => playSelectedTrack(track, recentHistory, index);
-    mini.onkeydown = (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        onPlay();
-      }
-    };
-    container.appendChild(mini);
+  recentHistory.forEach((track, index) => {
+    const card = createHomeCoverCard(track, () => activatePlaylistTrack(track, recentHistory, index));
+    card.ondblclick = () => playSelectedTrack(track, recentHistory, index);
+    container.appendChild(card);
   });
+  updateContinueCarousel();
   updateNowPlayingVisuals();
 }
 
