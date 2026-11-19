@@ -25,4 +25,5 @@ contextBridge.exposeInMainWorld('sunifyAPI', {
   updateCloseToTray: (enabled) => ipcRenderer.send('close-to-tray-setting', Boolean(enabled)),
   onMiniPlayerStateRequest: (callback) => ipcRenderer.on('mini-player-state-request', callback),
   onMiniPlayerControl: (callback) => ipcRenderer.on('mini-player-control', (_event, action, value) => callback(action, value)),
+  onWindowMinimizedState: (callback) => ipcRenderer.on('window-minimized-state', (_event, isMinimized) => callback(Boolean(isMinimized))),
 });

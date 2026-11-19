@@ -13,7 +13,7 @@ const LYRICS_OVH = 'https://api.lyrics.ovh/v1';
 
 const RESULT_TTL_MS = 12 * 60 * 60 * 1000;
 const MISS_TTL_MS = 2 * 60 * 1000;
-const MAX_CACHE_SIZE = 300;
+const MAX_CACHE_SIZE = 100;
 const resultCache = new Map();
 const pendingRequests = new Map();
 

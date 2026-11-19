@@ -863,3 +863,37 @@ body[data-theme='light'] .home-v2 .hm-panel { background:rgba(255,255,255,.58); 
 body[data-theme='light'] .home-v2 .hm-track.is-current-track { background:linear-gradient(90deg,rgba(133,93,211,.15),rgba(255,255,255,.12)); }
 body[data-theme='light'] .home-v2 .hm-mix-label { color:#fff; text-shadow:0 2px 12px rgba(0,0,0,.9); }
 @media (prefers-reduced-motion: reduce) { .hm-mix:hover, .hm-cover:hover, .hm-track:hover { transform: none; } }
+
+/* Performans & Düşük Kaynak Optimasyonu:
+   Pencere alta alındığında (window-minimized) veya Düşük Kaynak Modu (perf-low-power)
+   açıkken ağır GPU backdrop-filter ve blur katmanlarını kapat, kaydırma konteynerlerinde
+   layout/paint izolasyonu sağla. */
+.hm-track,
+.artist-track-row,
+.queue-track-row,
+.playlist-tracks-table .track-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
+body.window-minimized *,
+body.window-minimized *::before,
+body.window-minimized *::after {
+  animation-play-state: paused !important;
+  transition: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+body.perf-low-power .lyrics-backdrop,
+body.window-minimized .lyrics-backdrop {
+  filter: none !important;
+  transform: none !important;
+}
+
+body.perf-low-power *:not(.mini-player),
+body.perf-low-power *::before,
+body.perf-low-power *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

@@ -18,6 +18,8 @@ const { startServer } = require('../server');
 const { updatePresence, clearPresence, initRPC, setAccountChangedHandler } = require('../services/rpc/rpc');
 app.commandLine.appendSwitch('log-level', '3');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384');
 
 let mainWindow;
 let discordAccountProfile = null;
@@ -439,6 +441,9 @@ function createWindow() {
   // The same path is used for every way of minimizing: the in-app button,
   // clicking the window's taskbar button, Win+D / Win+M and the system menu.
   const showMiniPlayerWhenMinimized = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window-minimized-state', true);
+    }
     [60, 250, 700].forEach((delay) => setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) showMiniPlayer();
     }, delay));
@@ -447,6 +452,7 @@ function createWindow() {
   mainWindow.on('hide', showMiniPlayerWhenMinimized);
   const hideMiniPlayerWhenRestored = () => {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
+    mainWindow.webContents.send('window-minimized-state', false);
     miniPlayerDismissed = false;
     if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) miniPlayerWindow.hide();
   };

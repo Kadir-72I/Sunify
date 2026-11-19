@@ -109,26 +109,10 @@ function pumpPlaybackWarmupQueue() {
       });
   }
 }
-function queuePlaybackWarmup(videos) {
-  // Warm only the first two visible choices to keep background bandwidth bounded.
-  for (const video of (videos || []).slice(0, 2)) {
-    const id = String(video?.id || video?.videoId || '').trim();
-    if (!/^[a-zA-Z0-9_-]{11}$/.test(id) || playbackWarmupQueued.has(id)) continue;
-    if (playbackWarmupQueue.length >= 12) break;
-    playbackWarmupQueued.add(id);
-    playbackWarmupQueue.push({
-      id,
-      title: String(video.title || '').trim(),
-      artist: String(video.artist || video.author?.name || '').trim(),
-      thumbnail: String(video.thumbnail || '').trim(),
-      duration: Number(video.duration || video.seconds) || 0,
-      query: String(video.query || `${video.artist || video.author?.name || ''} ${video.title || ''}`).trim(),
-    });
-  }
-  if (playbackWarmupQueue.length) {
-    console.info(`[play-warmup] queued ${playbackWarmupQueue.length} song(s), running ${playbackWarmupWorkers} warmup(s)`);
-    setImmediate(pumpPlaybackWarmupQueue);
-  }
+function queuePlaybackWarmup(_videos) {
+  // Arka plan CPU ve RAM tüketimini minimumda tutmak için arama/öneri listelerinde
+  // otomatik toplu yt-dlp indirmesi yapılmaz; yalnızca çalan şarkı ve bitmesine yakın
+  // sıradaki tek şarkı (/api/audio-prefetch) hazırlanır.
 }
 function cachedYtSearch(query, { forceRefresh = false } = {}) {
   const key = (typeof query === 'string' ? query : JSON.stringify(query)).trim().toLowerCase();
@@ -144,7 +128,7 @@ function cachedYtSearch(query, { forceRefresh = false } = {}) {
     }),
   ]).then((data) => {
     if (searchInFlight.get(key) === request) {
-      if (searchCache.size >= 120) searchCache.delete(searchCache.keys().next().value);
+      if (searchCache.size >= 50) searchCache.delete(searchCache.keys().next().value);
       searchCache.set(key, { at: Date.now(), data });
     }
     return data;

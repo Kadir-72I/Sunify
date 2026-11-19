@@ -1,17 +1,23 @@
 // Liquid glass etkileşimleri: imleci izleyen parlama + ikon "pop" animasyonu.
-// Hafif tutuldu: tek dinleyici, rAF ile sınırlı, yalnızca cam öğelerde çalışır.
+// Ultra-hafif sürüm: MutationObserver yok, boundingRect önbellekli, pencere gizliyken
+// veya düşük kaynak modunda sıfır CPU/GPU tüketir.
 (() => {
   const GLASS = [
     '.tool-btn', '.tool-btn-icon', '.icon-round-btn', '.filter-tab', '.pill-btn', '.back-pill-btn', '.spotlight-filter',
     '.btn-cancel', '.btn-primary', '.play-all-pill', '.artist-play-btn', '.primary-pill-btn', '.artist-action-btn',
     '.titlebar-arrow-btn', '.nav-btn', '.play-pause-btn', '.player-right button', '.player-center button',
-    '.heart-btn', '.close-overlay-btn', '.settings-menu-item', '.player-floating-capsule', '.sidebar',
-    '.queue-drawer', '.queue-drawer .icon-btn', '.queue-drawer .tool-btn', '.queue-track-row',
+    '.heart-btn', '.close-overlay-btn', '.settings-menu-item',
+    '.queue-drawer .icon-btn', '.queue-drawer .tool-btn',
   ].join(',');
 
   let frame = 0;
   let pending = null;
+  let cachedTarget = null;
+  let cachedRect = null;
+  let cachedRectAt = 0;
+
   document.addEventListener('pointermove', (event) => {
+    if (document.hidden || document.body.classList.contains('perf-low-power')) return;
     const target = event.target instanceof Element ? event.target.closest(GLASS) : null;
     if (!target) return;
     pending = { target, x: event.clientX, y: event.clientY };
@@ -19,9 +25,16 @@
     frame = requestAnimationFrame(() => {
       frame = 0;
       if (!pending) return;
-      const rect = pending.target.getBoundingClientRect();
-      pending.target.style.setProperty('--mx', `${Math.round(pending.x - rect.left)}px`);
-      pending.target.style.setProperty('--my', `${Math.round(pending.y - rect.top)}px`);
+      const now = performance.now();
+      if (pending.target !== cachedTarget || now - cachedRectAt > 250) {
+        cachedTarget = pending.target;
+        cachedRect = cachedTarget.getBoundingClientRect();
+        cachedRectAt = now;
+      }
+      if (cachedRect) {
+        pending.target.style.setProperty('--mx', `${Math.round(pending.x - cachedRect.left)}px`);
+        pending.target.style.setProperty('--my', `${Math.round(pending.y - cachedRect.top)}px`);
+      }
       pending = null;
     });
   }, { passive: true });
@@ -31,28 +44,21 @@
     if (target && !target.contains(event.relatedTarget)) {
       target.style.removeProperty('--mx');
       target.style.removeProperty('--my');
+      if (cachedTarget === target) cachedTarget = null;
     }
   }, { passive: true });
 
-  // Oynat/duraklat ve beğeni ikonları değiştiğinde yaylanma animasyonu oynat.
-  const popTargets = '.play-pause-btn i, .heart-btn i, #playerLikeBtn i, .lyrics-ctl-btns i';
-  const replay = (icon) => {
+  // Oynat/duraklat ve beğeni butonlarına tıklandığında hafif ikon yaylanması
+  // (tüm DOM ağacını izleyen MutationObserver yerine doğrudan tıklama olayı)
+  const popSelectors = '.play-pause-btn, .heart-btn, #playerLikeBtn, .lyrics-ctl-btns button';
+  document.addEventListener('click', (event) => {
+    if (document.hidden || document.body.classList.contains('perf-low-power')) return;
+    const btn = event.target instanceof Element ? event.target.closest(popSelectors) : null;
+    const icon = btn?.querySelector('i');
+    if (!icon) return;
     icon.classList.remove('lg-pop');
     void icon.offsetWidth;
     icon.classList.add('lg-pop');
     icon.addEventListener('animationend', () => icon.classList.remove('lg-pop'), { once: true });
-  };
-  // lg-pop sınıfını eklemek/çıkarmak kendi gözlemcisini tetiklememeli (sonsuz döngü olurdu).
-  const strip = (value) => String(value || '').split(/\s+/).filter((name) => name && name !== 'lg-pop').sort().join(' ');
-  new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      if (mutation.type === 'attributes' && strip(mutation.oldValue) === strip(mutation.target.className)) continue;
-      const node = mutation.type === 'attributes' ? mutation.target : mutation.target.querySelector?.('i');
-      if (node instanceof Element && node.matches(popTargets)) replay(node);
-      else if (mutation.type === 'childList') mutation.addedNodes.forEach((added) => {
-        const icon = added instanceof Element ? (added.matches('i') ? added : added.querySelector('i')) : null;
-        if (icon && icon.matches(popTargets)) replay(icon);
-      });
-    }
-  }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true, childList: true });
+  }, { passive: true });
 })();
