@@ -669,11 +669,20 @@ body #lyricsRepeatBtn.is-active {
 #repeatBtn[data-repeat='one']::after, #lyricsRepeatBtn[data-repeat='one']::after {
   content: '1';
   position: absolute;
-  top: 4px;
-  right: 6px;
-  font: 800 9px/1 var(--font-sans, system-ui, sans-serif);
+  top: 2px;
+  right: 2px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(15, 13, 24, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  font: 800 8px/1 var(--font-sans, system-ui, sans-serif);
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
 }
 
 .lyrics-seek-bar, .player-floating-capsule { touch-action: none; }

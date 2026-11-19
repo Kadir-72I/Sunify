@@ -860,7 +860,6 @@ const navSettingsBtn = document.getElementById('navSettingsBtn');
 const closeSettingsBtn = document.getElementById('closeSettingsBtn');
 
 // Spotlight Arama
-const headerSearchPill = document.getElementById('headerSearchPill');
 const inlineSearchOverlay = document.getElementById('inlineSearchOverlay');
 const spotlightInput = document.getElementById('spotlightInput');
 const spotlightClearBtn = document.getElementById('spotlightClearBtn');
@@ -1365,18 +1364,60 @@ function setupNavigation() {
       toggleSpotlightSearch();
     }
     if (e.key === 'Escape') {
-      closeSpotlightSearch();
+      if (inlineSearchOverlay?.classList.contains('active')) {
+        closeSpotlightSearch();
+        return;
+      }
+      const openPopovers = [
+        document.getElementById('equalizerPopover'),
+        document.getElementById('audioOutputPopover'),
+        document.getElementById('audioOutputOptions'),
+        document.getElementById('playerVolumePopover'),
+        document.getElementById('playerVolumeWrap'),
+      ].filter((el) => el?.classList.contains('open'));
+      if (openPopovers.length) {
+        openPopovers.forEach((el) => el.classList.remove('open'));
+        document.getElementById('equalizerBtn')?.setAttribute('aria-expanded', 'false');
+        document.getElementById('audioOutputBtn')?.setAttribute('aria-expanded', 'false');
+        document.getElementById('audioOutputTrigger')?.setAttribute('aria-expanded', 'false');
+        document.getElementById('volumeIconBtn')?.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      const offsetPopup = document.getElementById('lyricsOffsetPopup');
+      if (offsetPopup?.classList.contains('active')) {
+        offsetPopup.classList.remove('active');
+        return;
+      }
+      const sourceMenu = document.getElementById('sourceMenu');
+      if (sourceMenu?.classList.contains('active')) {
+        sourceMenu.classList.remove('active');
+        document.getElementById('customSourceDropdown')?.classList.remove('open');
+        document.getElementById('sourceDropBtn')?.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      for (const modalId of ['wrappedModal', 'editTrackModal', 'addTrackModal', 'importModal']) {
+        const modalEl = document.getElementById(modalId);
+        if (modalEl?.classList.contains('active')) {
+          modalEl.classList.remove('active');
+          return;
+        }
+      }
+      if (viewSettings?.classList.contains('active')) {
+        closeSettingsBtn?.click();
+        return;
+      }
+      if (lyricsOverlay?.classList.contains('active')) {
+        closeLyricsBtn?.click();
+      }
     }
   });
 
   navSearchTriggerBtn.onclick = toggleSpotlightSearch;
-  headerSearchPill?.addEventListener('click', toggleSpotlightSearch);
 
   document.addEventListener('click', (e) => {
     if (inlineSearchOverlay.classList.contains('active')) {
       const isInside =
         inlineSearchOverlay.contains(e.target) ||
-        headerSearchPill?.contains(e.target) ||
         navSearchTriggerBtn.contains(e.target);
       if (!isInside) {
         closeSpotlightSearch();
@@ -4247,6 +4288,7 @@ function setupAudioEvents() {
   }
   // These controls live in the bottom player, whose glass/overflow layers clip popovers.
   // Portal them to the document root and position them against their trigger buttons.
+  if (equalizerPopover && equalizerPopover.parentElement !== document.body) document.body.appendChild(equalizerPopover);
   if (audioOutputPopover && audioOutputPopover.parentElement !== document.body) document.body.appendChild(audioOutputPopover);
   if (audioOutputOptions && audioOutputOptions.parentElement !== document.body) document.body.appendChild(audioOutputOptions);
   const playerVolumePopover = document.getElementById('playerVolumePopover');
@@ -4256,17 +4298,35 @@ function setupAudioEvents() {
   const equalizerStatus = document.getElementById('equalizerStatus');
   applyEqualizerGains(equalizerGains);
 
+  function positionEqualizerPopover() {
+    if (!equalizerBtn || !equalizerPopover) return;
+    const rect = equalizerBtn.getBoundingClientRect();
+    const panelHeight = equalizerPopover.getBoundingClientRect().height || 260;
+    equalizerPopover.style.left = `${Math.max(8, Math.min(window.innerWidth - 326, rect.left + rect.width / 2 - 155))}px`;
+    equalizerPopover.style.top = `${Math.max(8, rect.top - panelHeight - 12)}px`;
+    equalizerPopover.style.right = 'auto';
+    equalizerPopover.style.bottom = 'auto';
+  }
+
   if (equalizerBtn) {
-    equalizerBtn.onclick = async () => {
+    equalizerBtn.onclick = async (event) => {
+      event.stopPropagation();
       const open = !equalizerPopover?.classList.contains('open');
       equalizerPopover?.classList.toggle('open', open);
+      equalizerBtn.setAttribute('aria-expanded', String(open));
       if (open) {
+        audioOutputPopover?.classList.remove('open');
+        audioOutputOptions?.classList.remove('open');
+        audioOutputBtn?.setAttribute('aria-expanded', 'false');
+        audioOutputTrigger?.setAttribute('aria-expanded', 'false');
+        positionEqualizerPopover();
         try {
           initializeAudioEqualizer();
           await audioContext.resume();
           if (equalizerStatus) equalizerStatus.textContent = 'Filtreler canlı sese uygulanıyor.';
         } catch (error) {
           equalizerPopover?.classList.remove('open');
+          equalizerBtn.setAttribute('aria-expanded', 'false');
           showAppNotification('Ekolayzer açılamadı', error.message, true);
         }
       }
@@ -4300,6 +4360,9 @@ function setupAudioEvents() {
   document.querySelectorAll('[data-close-audio-tool]').forEach((button) => {
     button.addEventListener('click', () => {
       document.getElementById(button.dataset.closeAudioTool)?.classList.remove('open');
+      if (button.dataset.closeAudioTool === 'equalizerPopover') {
+        equalizerBtn?.setAttribute('aria-expanded', 'false');
+      }
       if (button.dataset.closeAudioTool === 'audioOutputPopover') {
         audioOutputOptions?.classList.remove('open');
         audioOutputTrigger?.setAttribute('aria-expanded', 'false');
@@ -4308,7 +4371,10 @@ function setupAudioEvents() {
     });
   });
   document.addEventListener('click', (event) => {
-    if (!document.getElementById('equalizerWrap')?.contains(event.target)) equalizerPopover?.classList.remove('open');
+    if (!equalizerBtn?.contains(event.target) && !equalizerPopover?.contains(event.target)) {
+      equalizerPopover?.classList.remove('open');
+      equalizerBtn?.setAttribute('aria-expanded', 'false');
+    }
     if (!audioOutputBtn?.contains(event.target) && !audioOutputPopover?.contains(event.target) && !audioOutputOptions?.contains(event.target)) {
       audioOutputPopover?.classList.remove('open');
       audioOutputOptions?.classList.remove('open');
@@ -4454,36 +4520,33 @@ function setupAudioEvents() {
   const volumeIcon = document.getElementById('volumeIcon');
   const playerVolumeWrap = document.getElementById('playerVolumeWrap');
   const volumePercent = document.getElementById('volumePercent');
+  function positionVolumePopover() {
+    if (!volumeIconBtn || !playerVolumePopover) return;
+    const rect = volumeIconBtn.getBoundingClientRect();
+    playerVolumePopover.style.left = `${Math.max(8, Math.min(window.innerWidth - 64, rect.left + rect.width / 2 - 22))}px`;
+    playerVolumePopover.style.right = 'auto';
+    playerVolumePopover.style.top = `${Math.max(8, rect.top - playerVolumePopover.offsetHeight - 10)}px`;
+    playerVolumePopover.style.bottom = 'auto';
+  }
   if (volumeIconBtn) {
     volumeIconBtn.onclick = () => {
       const open = playerVolumeWrap?.classList.toggle('open') ?? false;
       playerVolumePopover?.classList.toggle('open', open);
       volumeIconBtn.setAttribute('aria-expanded', String(open));
-      if (open && playerVolumePopover) {
-        const rect = volumeIconBtn.getBoundingClientRect();
-        playerVolumePopover.style.left = `${Math.max(8, Math.min(window.innerWidth - 64, rect.left + rect.width / 2 - 22))}px`;
-        playerVolumePopover.style.right = 'auto';
-        playerVolumePopover.style.top = `${Math.max(8, rect.top - playerVolumePopover.offsetHeight - 10)}px`;
-        playerVolumePopover.style.bottom = 'auto';
-      }
+      if (open) positionVolumePopover();
     };
   }
-
-  const toggleMiniPlayerBtn = document.getElementById('toggleMiniPlayerBtn');
-  if (toggleMiniPlayerBtn) {
-    toggleMiniPlayerBtn.onclick = () => {
-      const sidebar = document.querySelector('.sidebar');
-      if (sidebar) {
-        if (sidebar.style.display === 'none') {
-          sidebar.style.display = '';
-          showAppNotification('Katman', 'Kenar çubuğu gösteriliyor.');
-        } else {
-          sidebar.style.display = 'none';
-          showAppNotification('Katman', 'Kenar çubuğu gizlendi (Odak Modu).');
-        }
-      }
-    };
-  }
+  window.addEventListener('resize', () => {
+    if (equalizerPopover?.classList.contains('open')) positionEqualizerPopover();
+    if (audioOutputPopover?.classList.contains('open') && audioOutputBtn) {
+      const rect = audioOutputBtn.getBoundingClientRect();
+      const panelHeight = audioOutputPopover.getBoundingClientRect().height;
+      audioOutputPopover.style.left = `${Math.max(8, Math.min(window.innerWidth - 326, rect.left + rect.width / 2 - 155))}px`;
+      audioOutputPopover.style.top = `${Math.max(8, rect.top - panelHeight - 12)}px`;
+    }
+    if (audioOutputOptions?.classList.contains('open')) positionAudioOutputOptions();
+    if (playerVolumePopover?.classList.contains('open')) positionVolumePopover();
+  });
 
   function handleVolumeChange(val) {
     const parsedVolume = Number.parseFloat(val);
@@ -6137,46 +6200,6 @@ function initAccountSystem() {
   const accountDeletePhrase = document.getElementById('accountDeletePhrase');
   const accountDeleteStatus = document.getElementById('accountDeleteStatus');
   const btnConfirmAccountDelete = document.getElementById('btnConfirmAccountDelete');
-
-  const settingsSupabaseUrl = document.getElementById('settingsSupabaseUrl');
-  const settingsSupabaseKey = document.getElementById('settingsSupabaseKey');
-  const btnSaveSupabaseFromSettings = document.getElementById('btnSaveSupabaseFromSettings');
-
-  // Supabase ayarlarını yükle
-  fetch(`${API_BASE}/auth/config`)
-    .then((r) => r.json())
-    .then((conf) => {
-      if (conf.url && settingsSupabaseUrl) {
-        settingsSupabaseUrl.value = conf.url;
-      }
-    })
-    .catch(() => {});
-
-  if (btnSaveSupabaseFromSettings) {
-    btnSaveSupabaseFromSettings.onclick = async () => {
-      const url = settingsSupabaseUrl.value.trim();
-      const anonKey = settingsSupabaseKey.value.trim();
-      if (!url || !anonKey) {
-        showAppNotification('Eksik Bilgi', 'Lütfen Supabase URL ve Key giriniz.', true);
-        return;
-      }
-      try {
-        const res = await fetch(`${API_BASE}/auth/config`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, anonKey }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          showAppNotification('Başarılı', 'Supabase bulut bağlantısı güncellendi!');
-        } else {
-          showAppNotification('Hata', data.error || 'Kaydedilemedi', true);
-        }
-      } catch (err) {
-        showAppNotification('Bağlantı Hatası', err.message, true);
-      }
-    };
-  }
 
   // Profil Barlarını Güncelle (Ayarların Sol Altındaki Bar & Hesap Sekmesi)
   function updateProfileUI() {

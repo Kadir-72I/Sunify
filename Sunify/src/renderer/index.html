@@ -188,7 +188,7 @@
             <div class="hm-head hm-head-with-action">
               <div class="hm-title-action-group">
                 <h2><i class="fa-solid fa-chart-line"></i> Dinleme özeti</h2>
-                <button class="hm-btn" id="openWrappedModalBtn" type="button" title="Kişisel dinleme özetini görüntüle"><i class="fa-solid fa-sparkles"></i> Sunify Özeti</button>
+                <button class="hm-btn" id="openWrappedModalBtn" type="button" title="Kişisel dinleme özetini görüntüle"><i class="fa-solid fa-wand-magic-sparkles"></i> Sunify Özeti</button>
               </div>
             </div>
             <div class="hm-stats" id="listeningStatsGrid"></div>
@@ -317,11 +317,11 @@
                 <i class="fa-solid fa-magnifying-glass"></i>
                 <input type="text" id="libSearchInput" placeholder="Kitaplıkta ara..." />
               </div>
-              <div class="library-view-toggle" id="libraryViewToggle" role="group" aria-label="Library view">
-                <button class="library-view-btn active" type="button" data-library-view="grid" aria-label="Grid view" aria-pressed="true" title="Grid view">
+              <div class="library-view-toggle" id="libraryViewToggle" role="group" aria-label="Kitaplık görünümü">
+                <button class="library-view-btn active" type="button" data-library-view="grid" aria-label="Izgara görünümü" aria-pressed="true" title="Izgara görünümü">
                   <i class="fa-solid fa-grip"></i>
                 </button>
-                <button class="library-view-btn" type="button" data-library-view="list" aria-label="List view" aria-pressed="false" title="List view">
+                <button class="library-view-btn" type="button" data-library-view="list" aria-label="Liste görünümü" aria-pressed="false" title="Liste görünümü">
                   <i class="fa-solid fa-list"></i>
                 </button>
               </div>
@@ -1538,6 +1538,26 @@
             <button class="icon-btn small" id="repeatBtn" title="Tekrarla">
               <i class="fa-solid fa-repeat"></i>
             </button>
+            <div class="player-audio-tool" id="equalizerWrap">
+              <button class="icon-btn small" id="equalizerBtn" type="button" title="Ekolayzer" aria-label="Ekolayzer" aria-expanded="false" aria-controls="equalizerPopover"><i class="fa-solid fa-sliders"></i></button>
+              <div class="audio-tool-popover" id="equalizerPopover" role="dialog" aria-label="Ekolayzer">
+                <div class="audio-tool-heading"><strong>Ekolayzer</strong><button class="audio-tool-close" type="button" data-close-audio-tool="equalizerPopover" aria-label="Kapat"><i class="fa-solid fa-xmark"></i></button></div>
+                <div class="eq-presets" role="group" aria-label="Ekolayzer profilleri">
+                  <button type="button" data-eq-preset="flat" class="active">Düz</button>
+                  <button type="button" data-eq-preset="bass">Bas</button>
+                  <button type="button" data-eq-preset="vocal">Vokal</button>
+                  <button type="button" data-eq-preset="treble">Tiz</button>
+                </div>
+                <div class="eq-bands">
+                  <label><span>60Hz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="0" aria-label="60 Hz" /><output>0.0 dB</output></label>
+                  <label><span>250Hz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="1" aria-label="250 Hz" /><output>0.0 dB</output></label>
+                  <label><span>1kHz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="2" aria-label="1 kHz" /><output>0.0 dB</output></label>
+                  <label><span>4kHz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="3" aria-label="4 kHz" /><output>0.0 dB</output></label>
+                  <label><span>12kHz</span><input type="range" min="-12" max="12" step="0.5" value="0" data-eq-band="4" aria-label="12 kHz" /><output>0.0 dB</output></label>
+                </div>
+                <p class="audio-tool-status" id="equalizerStatus">Filtreler canlı sese uygulanır.</p>
+              </div>
+            </div>
             <div class="player-audio-tool" id="audioOutputWrap">
               <button class="icon-btn small" id="audioOutputBtn" type="button" title="Ses çıkış aygıtı" aria-label="Ses çıkış aygıtı" aria-expanded="false" aria-controls="audioOutputPopover"><i class="fa-solid fa-headphones"></i></button>
               <div class="audio-tool-popover output-popover" id="audioOutputPopover" role="dialog" aria-label="Ses çıkış aygıtı">
@@ -1552,8 +1572,8 @@
                 <p class="audio-tool-status" id="audioOutputStatus">Ses aygıtları aranıyor…</p>
               </div>
             </div>
-            <button class="icon-btn small highlight-hover" id="openLyricsBtn" title="Şarkı Sözleri">
-              <i class="fa-solid fa-circle-play"></i>
+            <button class="icon-btn small highlight-hover" id="openLyricsBtn" title="Şarkı Sözleri" aria-label="Şarkı Sözleri">
+              <i class="fa-solid fa-microphone-lines"></i>
             </button>
             <div class="player-volume-wrap" id="playerVolumeWrap">
               <button class="icon-btn small" id="volumeIconBtn" title="Ses düzeyi" aria-label="Ses düzeyi" aria-expanded="false" aria-controls="playerVolumePopover">
@@ -1564,11 +1584,11 @@
                 <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.8" aria-label="Ses düzeyi" />
               </div>
             </div>
-            <button class="icon-btn small" id="queueBtn" title="Sıra">
-              <i class="fa-solid fa-expand"></i>
+            <button class="icon-btn small" id="queueBtn" title="Çalma Sırası" aria-label="Çalma Sırası">
+              <i class="fa-solid fa-list-ul"></i>
             </button>
           </div>
-          <div class="progress-bar-container player-progress" id="progressBarContainer" role="slider" aria-label="Track progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+          <div class="progress-bar-container player-progress" id="progressBarContainer" role="slider" aria-label="Şarkı ilerleme çubuğu" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
             <div class="progress-bar-fill" id="progressBarFill"></div>
           </div>
         </div>
