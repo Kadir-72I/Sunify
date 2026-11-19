@@ -2,6 +2,7 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self' https: data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob: file:; media-src 'self' https: blob: file: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* http://localhost:* https:; font-src 'self' https: data:; object-src 'none'; base-uri 'self'; form-action 'self'"
@@ -12,6 +13,7 @@
     <link rel="stylesheet" href="vendor/fa/css/all.min.css" />
     <link rel="stylesheet" href="modern.css" />
     <link rel="stylesheet" href="glass.css" />
+    <link rel="stylesheet" href="mobile.css" />
   </head>
   <body data-theme="dark">
     <!-- PENCERESİZ (FRAMELESS) ÖZEL BAŞLIK ÇUBUĞU -->
@@ -142,13 +144,10 @@
 
         <!-- 1. GÖRÜNÜM: ANA SAYFA (HOME) -->
         <section id="viewHome" class="view-section active home-v2">
-          <!-- 1. GÜNLÜK MİXLER + SUNIFY ÖZETİ -->
+          <!-- 1. GÜNLÜK MİXLER -->
           <section class="hm-section">
-            <div class="hm-head hm-head-with-action">
+            <div class="hm-head">
               <h2><i class="fa-solid fa-compact-disc"></i> Günlük Mixler</h2>
-              <button class="hm-btn hm-wrapped-trigger" id="openWrappedModalBtn" type="button" title="Kişisel dinleme özetini görüntüle">
-                <i class="fa-solid fa-chart-simple"></i> Dinleme Özeti
-              </button>
             </div>
             <div class="hm-mix-row" id="dailyMixesGrid"></div>
           </section>
@@ -193,9 +192,16 @@
             </div>
           </section>
 
-          <div id="listeningStatsSection" hidden>
-            <div id="listeningStatsGrid"></div>
-          </div>
+          <!-- 5. DİNLEME ÖZETİ -->
+          <section class="hm-section" id="listeningStatsSection">
+            <div class="hm-head hm-head-with-action">
+              <h2><i class="fa-solid fa-chart-line"></i> Dinleme özeti</h2>
+              <button class="hm-btn hm-wrapped-trigger" id="openWrappedModalBtn" type="button" title="Kişisel dinleme özetini görüntüle">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Sunify Özeti
+              </button>
+            </div>
+            <div class="hm-stats" id="listeningStatsGrid"></div>
+          </section>
         </section>
 
         <!-- 2. GÖRÜNÜM: ÇALMA LİSTESİ İÇ DETAY SAYFASI -->
@@ -1287,11 +1293,11 @@
                       </svg>
                       <span class="about-hero-name">Sunify</span>
                     </div>
-                    <span class="about-version-pill"><span class="green-dot"></span> <span id="aboutVersionBadge">v1.0.0</span></span>
+                    <span class="about-version-pill"><span class="green-dot"></span> <span id="aboutVersionBadge">v1.2.1</span></span>
                   </div>
 
                   <div class="about-core-info" id="aboutClientVersion">
-                    Client 1.0.0 (Sunify Desktop) • Core 1.0.0 (Express & yt-dlp)
+                    Client 1.2.1 (Sunify Desktop) • Core 1.2.1 (Express & yt-dlp)
                   </div>
 
                   <div style="margin-top: 20px">
@@ -1952,6 +1958,7 @@
     </div>
 
     <audio id="audioPlayer"></audio>
+    <script src="mobile-bridge.js"></script>
     <script src="lyricsTiming.js"></script>
     <script src="renderer.js"></script>
     <script src="liquid.js"></script>
