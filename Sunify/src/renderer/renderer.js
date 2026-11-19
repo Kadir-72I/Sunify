@@ -7377,30 +7377,30 @@ initAccountSystem();
 
     wrappedBody.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-        <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)">
-          <div style="font-size:11px;opacity:.7">Tam Dinlenen Şarkı</div>
+        <div style="padding:12px;border-radius:14px;background:rgba(12,10,20,.62);border:1px solid rgba(255,255,255,.12)">
+          <div style="font-size:11px;opacity:.75">Tam Dinlenen Şarkı</div>
           <div style="font-size:22px;font-weight:800;margin-top:4px">${totalPlays}</div>
         </div>
-        <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)">
-          <div style="font-size:11px;opacity:.7">Toplam Süre</div>
+        <div style="padding:12px;border-radius:14px;background:rgba(12,10,20,.62);border:1px solid rgba(255,255,255,.12)">
+          <div style="font-size:11px;opacity:.75">Toplam Süre</div>
           <div style="font-size:22px;font-weight:800;margin-top:4px">${totalMinutes} dk</div>
         </div>
-        <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)">
-          <div style="font-size:11px;opacity:.7">En Aktif Gün</div>
+        <div style="padding:12px;border-radius:14px;background:rgba(12,10,20,.62);border:1px solid rgba(255,255,255,.12)">
+          <div style="font-size:11px;opacity:.75">En Aktif Gün</div>
           <div style="font-size:16px;font-weight:800;margin-top:6px">${favDay}</div>
         </div>
       </div>
-      <div style="padding:14px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)">
-        <div style="font-size:12px;font-weight:700;opacity:.75;margin-bottom:8px">EN ÇOK DİNLEDİĞİN PARÇALAR</div>
+      <div style="padding:14px;border-radius:14px;background:rgba(12,10,20,.62);border:1px solid rgba(255,255,255,.11)">
+        <div style="font-size:12px;font-weight:700;opacity:.8;margin-bottom:8px">EN ÇOK DİNLEDİĞİN PARÇALAR</div>
         ${topTracks.length
-          ? topTracks.map((t, i) => `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.05)"><span><strong>${i + 1}.</strong> ${t.title} <span style="opacity:.65">· ${t.artist || ''}</span></span><strong>${t.playCount} kez</strong></div>`).join('')
-          : '<div style="font-size:13px;opacity:.7">Bir şarkıyı atlamadan sonuna kadar dinlediğinde burada listelenir.</div>'}
+          ? topTracks.map((t, i) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong>${i + 1}.</strong> ${t.title} <span style="opacity:.68">· ${t.artist || ''}</span></span><strong style="white-space:nowrap;flex-shrink:0">${t.playCount} kez</strong></div>`).join('')
+          : '<div style="font-size:13px;opacity:.75">Bir şarkıyı atlamadan sonuna kadar dinlediğinde burada listelenir.</div>'}
       </div>
-      <div style="padding:14px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)">
-        <div style="font-size:12px;font-weight:700;opacity:.75;margin-bottom:8px">FAVORİ SANATÇILARIN</div>
+      <div style="padding:14px;border-radius:14px;background:rgba(12,10,20,.62);border:1px solid rgba(255,255,255,.11)">
+        <div style="font-size:12px;font-weight:700;opacity:.8;margin-bottom:8px">FAVORİ SANATÇILARIN</div>
         ${topArtists.length
-          ? topArtists.map(([name, count], i) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span><strong>${i + 1}.</strong> ${name}</span><span>${count} tam dinleme</span></div>`).join('')
-          : '<div style="font-size:13px;opacity:.7">Henüz tam dinleme verisi yok.</div>'}
+          ? topArtists.map(([name, count], i) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 0;font-size:13px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong>${i + 1}.</strong> ${name}</span><span style="white-space:nowrap;flex-shrink:0">${count} tam dinleme</span></div>`).join('')
+          : '<div style="font-size:13px;opacity:.75">Henüz tam dinleme verisi yok.</div>'}
       </div>
     `;
   }
