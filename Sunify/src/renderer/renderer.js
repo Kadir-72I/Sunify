@@ -680,7 +680,32 @@ let seekRecoveryToken = 0;
 // Dinleme oturumu: dinleme sayısı yalnızca gerçekten çalınan saniyeler
 // şarkının sonuna kadar biriktiğinde artar; ileri atlamak sayımı iptal eder.
 const listenSession = { track: null, listened: 0, skippedForward: false };
+function recordEarlyTrackSkip(track) {
+  if (!track || !track.title) return;
+  const key = recommendationTrackKey(track);
+  if (!key) return;
+  // Kullanıcının beğendiği veya daha önce tam dinlediği bir parçaysa erken atlama cezası verme
+  if (likedTracks.some((t) => recommendationTrackKey(t) === key)) return;
+  const analyticsKey = `${track.artist || ''} - ${track.title}`.trim().toLowerCase();
+  if ((Number(trackAnalytics?.[analyticsKey]?.playCount) || 0) > 0) return;
+  if (!Array.isArray(recommendationFeedback.skipped)) recommendationFeedback.skipped = [];
+  recommendationFeedback.skipped = [
+    { key, title: track.title || '', artist: track.artist || '', at: Date.now() },
+    ...recommendationFeedback.skipped.filter((item) => item?.key !== key),
+  ].slice(0, 60);
+  writeAccountJson('sunify_recommendation_feedback', recommendationFeedback);
+}
+
 function resetListenSession(track = currentTrack) {
+  if (
+    listenSession.track &&
+    track &&
+    listenSession.track !== track &&
+    listenSession.listened >= 1.5 &&
+    listenSession.listened < 18
+  ) {
+    recordEarlyTrackSkip(listenSession.track);
+  }
   listenSession.track = track || null;
   listenSession.listened = 0;
   listenSession.skippedForward = false;
@@ -1101,6 +1126,36 @@ document.addEventListener('DOMContentLoaded', () => {
   // Prepare familiar tracks early so a later click can reuse the progressive cache.
   prefetchTrackBatch(getMostPlayedTracks(20), 20);
   document.getElementById('refreshHomeRecommendationsBtn')?.addEventListener('click', () => loadHomeRecommendations(true, true));
+  document.querySelectorAll('#homeRecommendationModeTabs .hm-rec-pill').forEach((pill) => {
+    pill.addEventListener('click', () => {
+      const nextMode = pill.dataset.recMode || 'all';
+      if (activeHomeRecommendationMode === nextMode) return;
+      activeHomeRecommendationMode = nextMode;
+      document.querySelectorAll('#homeRecommendationModeTabs .hm-rec-pill').forEach((btn) => {
+        const active = btn === pill;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', String(active));
+      });
+      void loadHomeRecommendations(true, false);
+    });
+  });
+  document.getElementById('playHomeRecommendationsRadioBtn')?.addEventListener('click', async () => {
+    let radioQueue = homeRecommendationCache.fullTracks?.length
+      ? homeRecommendationCache.fullTracks
+      : homeRecommendationCache.tracks || [];
+    if (!radioQueue.length) {
+      await loadHomeRecommendations(true, false);
+      radioQueue = homeRecommendationCache.fullTracks?.length
+        ? homeRecommendationCache.fullTracks
+        : homeRecommendationCache.tracks || [];
+    }
+    if (!radioQueue.length) {
+      showAppNotification('Öneri Radyosu', 'Önce birkaç şarkı dinleyerek öneri geçmişi oluşturun.', true);
+      return;
+    }
+    playSelectedTrack(radioQueue[0], radioQueue, 0);
+    showAppNotification('Öneri Radyosu Başlatıldı', `${radioQueue.length} parçalık kişisel öneri sırası çalıyor.`);
+  });
   setupContinueCarousel();
   renderRecentHistory();
   renderLibraryItems();
@@ -2139,15 +2194,79 @@ async function refreshGlobalTopTracks() {
   renderNowPlayingDualGrid();
 }
 
+function collectKnownArtistNames(maxArtists = 30) {
+  const artistScores = new Map();
+  const addArtist = (artistName, points = 1) => {
+    const raw = String(artistName || '').trim();
+    if (!raw) return;
+    raw.split(/[,&/]|feat\.?|ft\.?/i).forEach((part) => {
+      const clean = part.trim();
+      const key = normalizeRecommendationTitle(clean);
+      if (!key || key === 'sunify' || key === 'bilinmeyen sanatci') return;
+      const prev = artistScores.get(key) || { name: clean, score: 0 };
+      prev.score += points;
+      artistScores.set(key, prev);
+    });
+  };
+  getMostPlayedTracks(30).forEach((t) => addArtist(t.artist, Math.max(2, Number(t.playCount) || 1)));
+  likedTracks.forEach((t) => addArtist(t.artist, 3));
+  (recommendationFeedback.liked || []).forEach((t) => addArtist(t.artist, 3));
+  return [...artistScores.values()]
+    .filter((entry) => entry.score >= 2)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxArtists)
+    .map((entry) => entry.name);
+}
+
+function collectSmartRecommendationSeeds({ mode = 'all', limit = 6, refreshSearch = false } = {}) {
+  const skippedKeys = new Set((recommendationFeedback.skipped || []).map((item) => item?.key).filter(Boolean));
+  const dismissedKeys = new Set((recommendationFeedback.dismissed || []).map((item) => item?.key).filter(Boolean));
+  const isBlocked = (track) => {
+    const k = recommendationTrackKey(track);
+    return !k || dismissedKeys.has(k) || skippedKeys.has(k);
+  };
+
+  const nowMs = Date.now();
+  const topPlayed = getMostPlayedTracks(16).filter((t) => !isBlocked(t));
+  const validRecent = recentHistory.slice(0, 12).filter((t) => !isBlocked(t));
+  const validLiked = likedTracks.slice(-10).reverse().filter((t) => !isBlocked(t));
+  const feedbackLiked = (recommendationFeedback.liked || []).slice(0, 6).filter((t) => !isBlocked(t));
+
+  const seedItems = [
+    ...feedbackLiked.map((track) => ({ track, weight: 7 })),
+    ...validLiked.map((track) => ({ track, weight: mode === 'discovery' ? 6 : 5 })),
+    ...topPlayed.map((track) => {
+      const plays = Math.max(1, Number(track.playCount) || 1);
+      const totalMins = (Number(track.totalSeconds) || 0) / 60;
+      const lastPlayedMs = track.lastPlayed ? Date.parse(track.lastPlayed) : 0;
+      const recencyBonus = lastPlayedMs && (nowMs - lastPlayedMs < 7 * 86400_000) ? 1.5 : 0;
+      const weight = Math.min(8, Math.round(2.5 + Math.log2(plays + 1) + Math.min(2, totalMins / 8) + recencyBonus));
+      return { track, weight };
+    }),
+    ...validRecent.map((track) => ({ track, weight: 2 })),
+  ];
+
+  const rankedSeeds = buildRecommendationSeeds(seedItems, 12);
+  if (!rankedSeeds.length) return [];
+  const secondarySeeds = rankedSeeds.slice(1);
+  if (refreshSearch && secondarySeeds.length > 4) {
+    const offset = Math.floor(Math.random() * (secondarySeeds.length - 3));
+    secondarySeeds.push(...secondarySeeds.splice(0, offset));
+  }
+  return rankedSeeds.length > limit
+    ? [rankedSeeds[0], ...secondarySeeds.slice(0, limit - 1)]
+    : rankedSeeds;
+}
+
 function renderDailyMixes() {
   const container = document.getElementById('dailyMixesGrid');
   if (!container) return;
 
   const topTracks = getMostPlayedTracks(25);
   const allKnownTracks = [...recentHistory, ...likedTracks, ...topTracks];
-  const discoverySeeds = (likedTracks.length
-    ? likedTracks.slice(-12).reverse()
-    : [...recentHistory].slice(5, 20)).map((track) => ({ track, weight: 4 }));
+  const similarSeeds = collectSmartRecommendationSeeds({ mode: 'similar', limit: 6 });
+  const discoverySeeds = collectSmartRecommendationSeeds({ mode: 'discovery', limit: 6 });
+  const knownArtistNames = collectKnownArtistNames(30);
   const popularArtistTracks = new Map();
   for (const track of topTracks) {
     const key = normalizeRecommendationTitle(track.artist);
@@ -2158,10 +2277,10 @@ function renderDailyMixes() {
   }
   const mixSpecs = [
     { name: 'En çok dinlediklerin', author: 'Dinleme geçmişin', tracks: topTracks, cover: topTracks[0]?.thumbnail || '' },
-    { name: 'Sana benzer şarkılar', author: 'En çok dinlediklerine göre', tracks: null, seeds: buildRecommendationSeeds(topTracks.slice(0, 10).map((track) => ({ track, weight: 4 })), 6), exclude: topTracks.slice(0, 10) },
+    { name: 'Sana benzer şarkılar', author: 'Tam dinlediğin ve beğendiğin şarkılara göre', tracks: null, mode: 'similar', seeds: similarSeeds, exclude: topTracks.slice(0, 10) },
     { name: 'Bugün en çok dinlenenler', author: 'Sunify topluluğu · bugün', tracks: null, daily: true },
     { name: 'Favori sanatçıların', author: 'En çok dinlediğin sanatçılardan', tracks: null, artists: [...popularArtistTracks.values()].sort((a, b) => b.count - a.count).slice(0, 6).map((entry) => entry.artist) },
-    { name: 'Yeni keşifler', author: 'Henüz dinlemediğin öneriler', tracks: null, seeds: buildRecommendationSeeds(discoverySeeds, 6), exclude: allKnownTracks },
+    { name: 'Yeni keşifler', author: 'Tarzına uygun yeni sanatçılar ve keşifler', tracks: null, mode: 'discovery', seeds: discoverySeeds, excludeArtists: knownArtistNames, exclude: allKnownTracks },
   ];
   const requestId = ++dailyMixRenderRequest;
   container.innerHTML = '';
@@ -2177,9 +2296,18 @@ function renderDailyMixes() {
       key = `artists:${spec.artists.join('|').toLocaleLowerCase('tr-TR')}`;
       url = `${API_BASE}/daily-mix/artist-tracks?${new URLSearchParams({ artists: JSON.stringify(spec.artists) })}`;
     } else if (spec.seeds?.length) {
-      const excludedKey = index === 4 ? (spec.exclude || []).map(recommendationTrackKey).join(',') : '';
-      key = `recommendations:${index}:${spec.seeds.map((seed) => `${seed.artist}:${seed.title}`).join('|')}:${excludedKey}`;
-      url = `${API_BASE}/recommendations?${new URLSearchParams({ seeds: JSON.stringify(spec.seeds) })}`;
+      const mixMode = spec.mode || (index === 4 ? 'discovery' : 'similar');
+      const excludedKey = index === 4 ? (spec.exclude || []).slice(0, 40).map(recommendationTrackKey).join(',') : '';
+      const excludedArtistsKey = Array.isArray(spec.excludeArtists) ? spec.excludeArtists.slice(0, 15).join(',') : '';
+      key = `recommendations:${mixMode}:${index}:${spec.seeds.map((seed) => `${seed.artist}:${seed.title}`).join('|')}:${excludedKey}:${excludedArtistsKey}`;
+      const queryParams = new URLSearchParams({
+        seeds: JSON.stringify(spec.seeds),
+        mode: mixMode,
+        ...(Array.isArray(spec.excludeArtists) && spec.excludeArtists.length
+          ? { excludeArtists: JSON.stringify(spec.excludeArtists) }
+          : {}),
+      });
+      url = `${API_BASE}/recommendations?${queryParams}`;
     } else {
       return [];
     }
@@ -2193,8 +2321,8 @@ function renderDailyMixes() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Daily Mix yüklenemedi.');
         let tracks = Array.isArray(data.tracks) ? data.tracks : [];
-        if (index === 1) tracks = filterRecommendationCandidates(tracks, { exclude: spec.exclude || [], limit: 25 });
-        if (index === 4) tracks = filterRecommendationCandidates(tracks, { exclude: spec.exclude || [], limit: 25 });
+        if (index === 1) tracks = filterRecommendationCandidates(tracks, { exclude: spec.exclude || [], limit: 25, maxPerArtist: 2 });
+        if (index === 4) tracks = filterRecommendationCandidates(tracks, { exclude: spec.exclude || [], limit: 25, maxPerArtist: 1 });
         tracks = tracks.slice(0, 25);
         if (!dailyMixCache.has(key) && dailyMixCache.size >= 24) dailyMixCache.delete(dailyMixCache.keys().next().value);
         dailyMixCache.set(key, { time: Date.now(), tracks });
@@ -2248,33 +2376,24 @@ function renderDailyMixes() {
 
 let playlistRecommendationRequest = 0;
 let homeRecommendationRequest = 0;
-let homeRecommendationCache = { key: '', time: 0, tracks: [] };
+let activeHomeRecommendationMode = 'all';
+let homeRecommendationCache = { key: '', time: 0, tracks: [], fullTracks: [] };
+
 async function loadHomeRecommendations(force = false, refreshSearch = false) {
   const container = document.getElementById('homeRecommendationsGrid');
   if (!container) return;
-  const seedItems = [
-    ...(recommendationFeedback.liked || []).slice(0, 4).map((track) => ({ track, weight: 6 })),
-    ...likedTracks.slice(-5).reverse().map((track) => ({ track, weight: 5 })),
-    ...getMostPlayedTracks(8).map((track) => ({ track, weight: 2 + Math.min(3, Math.floor(Math.log2((track.playCount || 1) + 1))) })),
-    ...recentHistory.slice(0, 8).map((track) => ({ track, weight: 2 })),
-  ];
-  const rankedSeeds = buildRecommendationSeeds(seedItems, 10);
-  const secondarySeeds = rankedSeeds.slice(1);
-  if (refreshSearch && secondarySeeds.length > 5) {
-    const offset = Math.floor(Math.random() * (secondarySeeds.length - 4));
-    secondarySeeds.push(...secondarySeeds.splice(0, offset));
-  }
-  const seeds = rankedSeeds.length > 6
-    ? [rankedSeeds[0], ...secondarySeeds.slice(0, 5)]
-    : rankedSeeds;
+  const mode = activeHomeRecommendationMode || 'all';
+  const seeds = collectSmartRecommendationSeeds({ mode, limit: 6, refreshSearch });
   if (!seeds.length) {
     container.innerHTML = '<p class="hm-empty">Dinleme geçmişin oluşunca tarzına uygun şarkılar burada görünecek.</p>';
     return;
   }
+  const knownArtists = mode === 'discovery' ? collectKnownArtistNames(30) : [];
   const refreshButton = document.getElementById('refreshHomeRecommendationsBtn');
   const feedbackKey = (recommendationFeedback.liked || []).map((item) => item.key).join(',');
   const dismissedKey = (recommendationFeedback.dismissed || []).map((item) => item.key).join(',');
-  const key = `${seeds.map((track) => `${track.artist} ${track.title}:${track.weight}`).join('|')}#${feedbackKey}#${dismissedKey}`;
+  const skippedKey = (recommendationFeedback.skipped || []).slice(0, 15).map((item) => item.key).join(',');
+  const key = `${mode}#${seeds.map((track) => `${track.artist} ${track.title}:${track.weight}`).join('|')}#${feedbackKey}#${dismissedKey}#${skippedKey}`;
   const requestId = ++homeRecommendationRequest;
   if (refreshSearch && refreshButton) {
     refreshButton.disabled = true;
@@ -2287,17 +2406,27 @@ async function loadHomeRecommendations(force = false, refreshSearch = false) {
   }
   container.innerHTML = '<p class="hm-empty"><i class="fa-solid fa-spinner fa-spin"></i> Sana uygun şarkılar aranıyor…</p>';
   try {
-    const params = new URLSearchParams({ seeds: JSON.stringify(seeds), ...(refreshSearch ? { refresh: '1' } : {}) });
+    const params = new URLSearchParams({
+      seeds: JSON.stringify(seeds),
+      mode,
+      ...(knownArtists.length ? { excludeArtists: JSON.stringify(knownArtists) } : {}),
+      ...(refreshSearch ? { refresh: '1' } : {}),
+    });
     const response = await fetch(`${API_BASE}/recommendations?${params}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Öneriler alınamadı.');
     if (requestId !== homeRecommendationRequest) return;
-    const tracks = filterRecommendationCandidates(data.tracks, {
-      exclude: seeds,
-      recent: recentHistory.slice(0, 8),
-      limit: 8,
+    const allKnown = mode === 'discovery'
+      ? [...seeds, ...likedTracks, ...getMostPlayedTracks(25), ...recentHistory]
+      : seeds;
+    const fullFiltered = filterRecommendationCandidates(data.tracks, {
+      exclude: allKnown,
+      recent: recentHistory.slice(0, 10),
+      limit: 20,
+      maxPerArtist: mode === 'discovery' ? 1 : 2,
     });
-    homeRecommendationCache = { key, time: Date.now(), tracks };
+    const tracks = fullFiltered.slice(0, 8);
+    homeRecommendationCache = { key, time: Date.now(), tracks, fullTracks: fullFiltered };
     renderHomeRecommendationCards(container, tracks);
     prefetchTrackBatch(tracks, 5);
   } catch (error) {
@@ -2401,8 +2530,19 @@ function renderHomeRecommendationCards(container, tracks) {
     return;
   }
   tracks.forEach((track, index) => {
-    const card = createHomeCoverCard(track, () => playSelectedTrack(track, tracks, index));
+    const radioQueue = homeRecommendationCache.fullTracks?.length >= tracks.length
+      ? homeRecommendationCache.fullTracks
+      : tracks;
+    const card = createHomeCoverCard(track, () => activatePlaylistTrack(track, radioQueue, index));
+    card.ondblclick = () => playSelectedTrack(track, radioQueue, index);
     card.classList.add('hm-recommendation-card');
+    if (track.reason) {
+      const reasonEl = document.createElement('span');
+      reasonEl.className = 'hm-rec-reason';
+      reasonEl.textContent = track.reason;
+      reasonEl.title = track.reason;
+      card.appendChild(reasonEl);
+    }
     const controls = document.createElement('span');
     controls.className = 'hm-recommendation-feedback';
     controls.setAttribute('role', 'group');
@@ -2925,9 +3065,10 @@ function getRecommendationFeedback(track) {
   };
 }
 
-function filterRecommendationCandidates(candidates, { exclude = [], recent = [], limit = 8 } = {}) {
+function filterRecommendationCandidates(candidates, { exclude = [], recent = [], limit = 8, maxPerArtist = 2 } = {}) {
   const excludedTitles = [...exclude, ...recent].map(recommendationTrackKey).filter(Boolean);
   const dismissedTitles = (recommendationFeedback.dismissed || []).map((item) => item?.key).filter(Boolean);
+  const skippedTitles = (recommendationFeedback.skipped || []).slice(0, 30).map((item) => item?.key).filter(Boolean);
   const selected = [];
   const seenTitles = [];
   const artistCounts = new Map();
@@ -2940,11 +3081,16 @@ function filterRecommendationCandidates(candidates, { exclude = [], recent = [],
   };
   for (const track of candidates || []) {
     const titleKey = recommendationTrackKey(track);
-    if (!titleKey || excludedTitles.some((key) => similar(titleKey, key)) || dismissedTitles.some((key) => similar(titleKey, key))) continue;
+    if (
+      !titleKey ||
+      excludedTitles.some((key) => similar(titleKey, key)) ||
+      dismissedTitles.some((key) => similar(titleKey, key)) ||
+      skippedTitles.some((key) => similar(titleKey, key))
+    ) continue;
     if (seenTitles.some((key) => similar(titleKey, key))) continue;
     const artistKey = normalizeRecommendationTitle(track.artist);
     const artistCount = artistCounts.get(artistKey) || 0;
-    if (artistKey && artistCount >= 2) continue;
+    if (artistKey && artistCount >= maxPerArtist) continue;
     selected.push(track);
     seenTitles.push(titleKey);
     if (artistKey) artistCounts.set(artistKey, artistCount + 1);
@@ -3172,21 +3318,28 @@ function setupQueueDrawer() {
       }
       smartButton.disabled = true;
       try {
-        const query = `${currentTrack.artist || ''} ${currentTrack.title || ''}`.trim();
-        const response = await fetch(`${API_BASE}/recommendations?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(25_000) });
+        const recentQueueTracks = currentPlaylist
+          .slice(Math.max(0, currentIndex - 2), currentIndex + 1)
+          .filter(Boolean);
+        const contextSeedItems = [
+          { track: currentTrack, weight: 6 },
+          ...recentQueueTracks.map((track) => ({ track, weight: 4 })),
+          ...likedTracks.slice(-2).reverse().map((track) => ({ track, weight: 2 })),
+        ];
+        const seeds = buildRecommendationSeeds(contextSeedItems, 5);
+        const params = new URLSearchParams({ seeds: JSON.stringify(seeds), mode: 'similar' });
+        const response = await fetch(`${API_BASE}/recommendations?${params}`, { signal: AbortSignal.timeout(25_000) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Öneriler alınamadı.');
-        const known = new Set(currentPlaylist.map((track) => `${normalizeTrackText(track.artist)}|${normalizeTrackText(track.title)}`));
-        const fresh = (data.tracks || []).filter((track) => {
-          const key = `${normalizeTrackText(track.artist)}|${normalizeTrackText(track.title)}`;
-          if (known.has(key)) return false;
-          known.add(key);
-          return true;
-        }).slice(0, 10);
+        const fresh = filterRecommendationCandidates(data.tracks, {
+          exclude: currentPlaylist,
+          recent: recentHistory.slice(0, 6),
+          limit: 12,
+        });
         if (!currentPlaylist.length) { currentPlaylist = [currentTrack]; currentIndex = 0; }
         currentPlaylist = [...currentPlaylist, ...fresh];
         renderQueueDrawer();
-        showAppNotification('Akıllı sıra', fresh.length ? `${fresh.length} öneri sıraya eklendi.` : 'Eklenecek yeni öneri bulunamadı.');
+        showAppNotification('Akıllı sıra', fresh.length ? `${fresh.length} uyumlu öneri sıraya eklendi.` : 'Eklenecek yeni öneri bulunamadı.');
       } catch (error) {
         showAppNotification('Akıllı sıra başarısız', error.message, true);
       } finally {
@@ -3283,6 +3436,12 @@ async function loadPlaylistRecommendations(playlist, refreshSearch = false) {
       const title = document.createElement('strong'); title.textContent = track.title || '';
       const artist = document.createElement('span'); artist.textContent = track.artist || '';
       meta.append(title, artist);
+      if (track.reason) {
+        const reasonEl = document.createElement('small');
+        reasonEl.className = 'playlist-rec-reason';
+        reasonEl.textContent = track.reason;
+        meta.appendChild(reasonEl);
+      }
       const actions = document.createElement('div');
       actions.className = 'playlist-recommendation-actions';
       const feedback = getRecommendationFeedback(track);
@@ -4870,16 +5029,26 @@ function playNextTrack({ allowSimilar = false } = {}) {
 
 async function playSimilarAfterQueueEnds(track, previousPlaylist) {
   try {
-    const seeds = JSON.stringify([{ title: track.title, artist: track.artist || '', duration: Number(track.duration) || 0, weight: 5 }]);
-    const response = await fetch(`${API_BASE}/recommendations?${new URLSearchParams({ seeds })}`, { signal: AbortSignal.timeout(25000) });
+    const recentPlayed = Array.isArray(previousPlaylist) ? previousPlaylist.slice(-3) : [];
+    const seedItems = [
+      { track, weight: 6 },
+      ...recentPlayed.map((t) => ({ track: t, weight: 4 })),
+      ...likedTracks.slice(-2).reverse().map((t) => ({ track: t, weight: 2 })),
+    ];
+    const builtSeeds = buildRecommendationSeeds(seedItems, 5);
+    const params = new URLSearchParams({
+      seeds: JSON.stringify(builtSeeds),
+      mode: 'similar',
+    });
+    const response = await fetch(`${API_BASE}/recommendations?${params}`, { signal: AbortSignal.timeout(25000) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Benzer parçalar alınamadı.');
-    const picks = filterRecommendationCandidates(data.tracks, { exclude: previousPlaylist || [], recent: recentHistory.slice(0, 5), limit: 25 });
+    const picks = filterRecommendationCandidates(data.tracks, { exclude: previousPlaylist || [], recent: recentHistory.slice(0, 6), limit: 25 });
     if (!picks.length) return;
     currentPlaylist = picks;
     currentIndex = 0;
     playSelectedTrack(picks[0], picks, 0);
-    showAppNotification('Akıllı sıra', 'Sıran bitti; benzer parçalar çalmaya başladı.');
+    showAppNotification('Akıllı sıra', 'Sıran bitti; dinlediğin tarza uygun benzer parçalar çalmaya başladı.');
   } catch (error) {
     console.warn('Otomatik benzer parça sırası oluşturulamadı:', error.message);
   }

@@ -1142,3 +1142,63 @@ body.is-playing .pl-track-row.is-current-track .pl-track-name::before {
   opacity: 0.85;
   pointer-events: none;
 }
+
+/* 7. Gelişmiş Şarkı Öneri Sistemi: Mod Hapları, Radyo Butonu ve "Neden Önerildi?" Rozeti */
+.hm-rec-mode-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hm-rec-pill {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.75);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.hm-rec-pill:hover {
+  background: rgba(255, 255, 255, 0.11);
+  color: #fff;
+}
+.hm-rec-pill.active {
+  background: var(--accent-grad, linear-gradient(135deg, #c4b5fd, #7c3aed));
+  border-color: rgba(255, 255, 255, 0.32);
+  color: #fff;
+  box-shadow: 0 4px 14px var(--accent-soft, rgba(167, 139, 250, 0.25));
+}
+.hm-rec-radio-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.hm-rec-reason {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-strong, #d8b4fe);
+  opacity: 0.88;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.playlist-rec-reason {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-strong, #d8b4fe);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

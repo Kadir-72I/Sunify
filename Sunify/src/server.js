@@ -387,11 +387,55 @@ function recommendationTextSimilarity(left, right) {
   return intersection / (a.size + b.size - intersection);
 }
 
+const JUNK_RECOMMENDATION_TITLE_RE = /\b(full album|full ep|1 hour|2 hours|3 hours|10 hours|1 saat|2 saat|playlist|mixtape|compilation|derleme|reaction|inceleme|teaser|trailer|fragman|karaoke|instrumental|altyap[ıi]|type beat|free beat|ringtone|zil sesi|shorts|tiktok|live stream|canl[ıi] yay[ıi]n|podcast|interview|röportaj)\b/i;
+
+function isJunkRecommendationVideo(rawTitle, cleanedTitle, durationSec, mode = 'all') {
+  const combined = `${rawTitle || ''} ${cleanedTitle || ''}`;
+  if (JUNK_RECOMMENDATION_TITLE_RE.test(combined)) return true;
+  if (mode !== 'chill' && /\b(slowed|reverb|8d audio|nightcore|sped up)\b/i.test(combined)) return true;
+  const dur = Number(durationSec) || 0;
+  // 60 saniyeden kısa (Shorts/kesit) veya 8.5 dakikadan uzun (derleme/albüm) kayıtları ele
+  if (dur > 0 && (dur < 60 || dur > 510)) return true;
+  return false;
+}
+
+function buildSeedSearchQueries(seed, seedIndex, mode) {
+  const artist = String(seed.artist || '').trim();
+  const title = String(seed.title || '').trim();
+  const base = `${artist} ${title}`.trim();
+  if (!artist) return [base];
+
+  if (mode === 'discovery') {
+    return seedIndex % 2 === 0
+      ? [`${artist} feat`, `${artist} ${title} mix`]
+      : [`${artist} düet`, `songs like ${artist} ${title}`];
+  }
+  if (mode === 'energetic') {
+    return [`${artist} ${title} remix`, `${artist} hareketli popüler şarkılar`];
+  }
+  if (mode === 'chill') {
+    return [`${artist} akustik slow`, `${artist} ${title} chill`];
+  }
+  if (mode === 'similar') {
+    return seedIndex === 0
+      ? [`${artist} ${title} mix`, `${artist} feat`]
+      : [`${artist} ${title} radio`, `${artist} en popüler şarkılar`];
+  }
+  // 'all' (varsayılan hibrit mod)
+  return seedIndex < 2
+    ? [`${artist} ${title} mix`, `${artist} feat`]
+    : [`${artist} ${title} radio`];
+}
+
 // Contextual recommendations combine several listening or playlist seeds.
 app.get('/api/recommendations', async (req, res) => {
   const query = String(req.query.q || '').trim().slice(0, 240);
   const forceRefresh = req.query.refresh === '1';
+  const mode = ['all', 'similar', 'discovery', 'energetic', 'chill'].includes(String(req.query.mode || ''))
+    ? String(req.query.mode)
+    : 'all';
   let seeds = [];
+  let excludeArtists = [];
   try {
     const rawSeeds = typeof req.query.seeds === 'string' ? JSON.parse(req.query.seeds) : [];
     if (Array.isArray(rawSeeds)) {
@@ -404,82 +448,165 @@ app.get('/api/recommendations', async (req, res) => {
           weight: Math.max(1, Math.min(8, Number(seed.weight) || 1)),
         }));
     }
+    if (typeof req.query.excludeArtists === 'string') {
+      const parsedExclude = JSON.parse(req.query.excludeArtists);
+      if (Array.isArray(parsedExclude)) {
+        excludeArtists = parsedExclude
+          .map((a) => normalizeRecommendationText(a))
+          .filter(Boolean)
+          .slice(0, 40);
+      }
+    }
   } catch {
     return res.status(400).json({ error: 'Öneri kaynak parçaları okunamadı.' });
   }
   if (!seeds.length && query) seeds = [{ title: query, artist: '', duration: 0, weight: 1 }];
   if (!seeds.length) return res.status(400).json({ error: 'Öneri için şarkı veya liste bağlamı gerekli.' });
+
   try {
+    const excludedArtistSet = new Set(excludeArtists);
+    const seedArtistKeys = new Set(seeds.map((s) => normalizeRecommendationText(s.artist)).filter(Boolean));
+
     const candidateGroups = await Promise.all(seeds.map(async (seed, seedIndex) => {
-      const searchQuery = `songs like ${seed.artist} ${seed.title}`.trim();
-      try {
-        const result = await cachedYtSearch(searchQuery, { forceRefresh });
-        return (result.videos || []).slice(0, 16).map((video) => {
-          const cleaned = cleanTrackMetadata(video.title, video.author?.name || '');
-          return {
-            id: video.videoId,
-            title: cleaned.title || video.title,
-            artist: cleaned.artist || video.author?.name || 'Bilinmeyen Sanatçı',
-            thumbnail: video.thumbnail || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`,
-            duration: Number(video.seconds) || 0,
-            query: `${cleaned.artist || video.author?.name || ''} ${cleaned.title || video.title}`.trim(),
-            seedIndex,
-          };
-        });
-      } catch (error) {
-        console.warn(`Öneri araması başarısız (${seed.title}):`, error.message);
-        return [];
-      }
+      const searchQueries = buildSeedSearchQueries(seed, seedIndex, mode);
+      const perSeedResults = await Promise.all(searchQueries.map(async (searchQuery, qIdx) => {
+        try {
+          const result = await cachedYtSearch(searchQuery, { forceRefresh: forceRefresh && qIdx === 0 });
+          return (result.videos || []).slice(0, 14).map((video) => {
+            const rawTitle = String(video.title || '');
+            const cleaned = cleanTrackMetadata(rawTitle, video.author?.name || '');
+            const cleanTitle = cleaned.title || rawTitle;
+            const cleanArtist = (cleaned.artist || video.author?.name || 'Bilinmeyen Sanatçı').replace(/\s*-\s*Topic$/i, '').trim();
+            const duration = Number(video.seconds) || 0;
+            if (isJunkRecommendationVideo(rawTitle, cleanTitle, duration, mode)) return null;
+            return {
+              id: video.videoId,
+              title: cleanTitle,
+              artist: cleanArtist,
+              thumbnail: video.thumbnail || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`,
+              duration,
+              query: `${cleanArtist} ${cleanTitle}`.trim(),
+              seedIndex,
+              queryType: qIdx === 0 ? 'primary' : 'collab',
+            };
+          }).filter(Boolean);
+        } catch (error) {
+          console.warn(`Öneri araması başarısız (${searchQuery}):`, error.message);
+          return [];
+        }
+      }));
+      return perSeedResults.flat();
     }));
 
     const seedDuration = seeds.filter((seed) => seed.duration > 0).map((seed) => seed.duration);
     const typicalDuration = seedDuration.length
       ? seedDuration.sort((a, b) => a - b)[Math.floor(seedDuration.length / 2)]
-      : 0;
+      : 200;
+
     const candidates = new Map();
     candidateGroups.flat().forEach((track) => {
       if (!track.id || !track.title) return;
       const seed = seeds[track.seedIndex];
       const titleMatch = Math.max(...seeds.map((item) => recommendationTextSimilarity(track.title, item.title)));
-      const sameArtistAsSeed = seeds.some((item) => normalizeRecommendationText(item.artist) && normalizeRecommendationText(item.artist) === normalizeRecommendationText(track.artist));
-      // Remove the seed songs themselves, including common alternate video/audio uploads.
-      if (titleMatch >= (sameArtistAsSeed ? 0.66 : 0.88)) return;
-
       const artistKey = normalizeRecommendationText(track.artist);
+      if (!artistKey || artistKey === 'bilinmeyen sanatci' || artistKey === 'various artists') return;
+
+      const sameArtistAsSeed = seedArtistKeys.has(artistKey);
+      // Tohum şarkının kendisini veya alternatif video yüklemelerini çıkar
+      if (titleMatch >= (sameArtistAsSeed ? 0.62 : 0.85)) return;
+
+      // Keşif modunda (Yeni Keşifler) kullanıcının zaten çok dinlediği sanatçıları ele, ancak düetlerde yeni sanatçı varsa izin ver
+      const isCollab = /\b(feat\.?|ft\.?|x|&|,)\b/i.test(`${track.artist} ${track.title}`);
+      if (mode === 'discovery' && (sameArtistAsSeed || excludedArtistSet.has(artistKey)) && !isCollab) {
+        return;
+      }
+
       const duration = Number(track.duration) || 0;
       const durationDelta = typicalDuration && duration ? Math.abs(duration - typicalDuration) / typicalDuration : 0;
-      const artistAffinity = seeds.reduce((sum, item) => (
-        normalizeRecommendationText(item.artist) && normalizeRecommendationText(item.artist) === artistKey
-          ? sum + item.weight
-          : sum
-      ), 0);
+      const artistAffinity = seeds.reduce((sum, item) => {
+        const sKey = normalizeRecommendationText(item.artist);
+        if (!sKey) return sum;
+        if (sKey === artistKey) return sum + item.weight;
+        if (artistKey.includes(sKey) || sKey.includes(artistKey)) return sum + item.weight * 0.7;
+        return sum;
+      }, 0);
+
       const seedDurationDelta = seed?.duration && duration ? Math.abs(duration - seed.duration) / seed.duration : 0;
-      const score = (artistAffinity * 0.55)
-        + (seed?.weight || 1) * 0.15
-        + (titleMatch >= 0.2 && titleMatch < 0.66 ? titleMatch * 1.1 : 0)
-        + (durationDelta < 0.2 ? 1.2 : durationDelta < 0.45 ? 0.45 : durationDelta > 0.9 ? -0.8 : 0)
-        + (seedDurationDelta < 0.2 ? 0.35 : 0);
-      const key = normalizeRecommendationText(track.title);
-      const previous = candidates.get(key);
-      if (!previous || score > previous.score) candidates.set(key, { ...track, score, artistKey });
+      let score = (seed?.weight || 1) * 0.35
+        + (durationDelta < 0.22 ? 1.15 : durationDelta < 0.45 ? 0.5 : -0.4)
+        + (seedDurationDelta < 0.2 ? 0.4 : 0)
+        + (isCollab ? 0.55 : 0);
+
+      if (mode === 'discovery') {
+        score += (!sameArtistAsSeed && !excludedArtistSet.has(artistKey)) ? 2.1 : 0.3;
+      } else if (mode === 'similar') {
+        score += artistAffinity > 0 ? Math.min(2.2, artistAffinity * 0.42) : 1.1;
+      } else if (mode === 'energetic') {
+        score += /\b(remix|club|bass|drill|trap|hit|party)\b/i.test(`${track.title} ${track.artist}`) ? 1.6 : 0.6;
+        score += (duration >= 130 && duration <= 230) ? 0.65 : 0;
+      } else if (mode === 'chill') {
+        score += /\b(acoustic|akustik|slow|chill|lofi|gece|piano|live)\b/i.test(`${track.title} ${track.artist}`) ? 1.6 : 0.6;
+      } else {
+        score += artistAffinity > 0 ? Math.min(1.8, artistAffinity * 0.38) : 0.95;
+      }
+
+      const candidateKey = `${artistKey}|${normalizeRecommendationText(track.title)}`;
+      const existing = candidates.get(candidateKey);
+      if (existing) {
+        // Ortak Kesişim (Co-Occurrence) Bonusu: Birden fazla tohum şarkıyla eşleşen parçaları öne çıkar
+        existing.matchedSeedIndices.add(track.seedIndex);
+        const coOccurrenceBonus = (existing.matchedSeedIndices.size - 1) * 1.65;
+        existing.score = Math.max(existing.score, score) + coOccurrenceBonus;
+        if ( existing.matchedSeedIndices.size >= 2 ) {
+          existing.reason = `🔥 ${existing.matchedSeedIndices.size} favori şarkınla ortak eşleşme`;
+        }
+      } else {
+        const seedArtistLabel = seed?.artist || seed?.title || 'Dinleme geçmişin';
+        let reason = `🎯 ${seedArtistLabel} tarzına göre`;
+        if (mode === 'discovery' && !sameArtistAsSeed) {
+          reason = `🧭 ${seedArtistLabel} sevenlere yeni keşif`;
+        } else if (mode === 'energetic') {
+          reason = `⚡ Enerjik mod · ${seedArtistLabel}`;
+        } else if (mode === 'chill') {
+          reason = `🌙 Gece & Chill · ${seedArtistLabel}`;
+        } else if (isCollab && sameArtistAsSeed) {
+          reason = `🤝 ${seedArtistLabel} ortak çalışması`;
+        }
+        candidates.set(candidateKey, {
+          ...track,
+          score,
+          artistKey,
+          reason,
+          matchedSeedIndices: new Set([track.seedIndex]),
+        });
+      }
     });
 
     const ranked = [...candidates.values()].sort((a, b) => b.score - a.score);
     const tracks = [];
     const artistCounts = new Map();
+    const maxPerArtist = mode === 'discovery' ? 1 : 2;
     let lastArtistKey = '';
     for (const track of ranked) {
-      const sameVersion = tracks.some((existing) => recommendationTextSimilarity(existing.title, track.title) >= 0.82);
+      const sameVersion = tracks.some((existing) => recommendationTextSimilarity(existing.title, track.title) >= 0.8);
       if (sameVersion) continue;
       const count = artistCounts.get(track.artistKey) || 0;
-      if (track.artistKey && (count >= 2 || track.artistKey === lastArtistKey)) continue;
-      tracks.push({ id: track.id, title: track.title, artist: track.artist, thumbnail: track.thumbnail, duration: track.duration, query: track.query });
+      if (track.artistKey && (count >= maxPerArtist || track.artistKey === lastArtistKey)) continue;
+      tracks.push({
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        thumbnail: track.thumbnail,
+        duration: track.duration,
+        query: track.query,
+        reason: track.reason,
+      });
       if (track.artistKey) artistCounts.set(track.artistKey, count + 1);
       lastArtistKey = track.artistKey;
       if (tracks.length >= 25) break;
     }
     queuePlaybackWarmup(tracks);
-    res.json({ tracks, seedCount: seeds.length });
+    res.json({ tracks, seedCount: seeds.length, mode });
   } catch (error) {
     res.status(502).json({ error: `Öneriler alınamadı: ${error.message}` });
   }
@@ -674,16 +801,21 @@ app.get('/api/daily-mix/artist-tracks', async (req, res) => {
       try {
         const result = await cachedYtSearch(`${artist} songs`);
         return (result.videos || []).slice(0, 20).map((video) => {
-          const cleaned = cleanTrackMetadata(video.title, video.author?.name || '');
+          const rawTitle = String(video.title || '');
+          const cleaned = cleanTrackMetadata(rawTitle, video.author?.name || '');
+          const cleanTitle = cleaned.title || rawTitle;
+          const cleanArtist = (cleaned.artist || video.author?.name || artist).replace(/\s*-\s*Topic$/i, '').trim();
+          const duration = Number(video.seconds) || 0;
+          if (isJunkRecommendationVideo(rawTitle, cleanTitle, duration, 'all')) return null;
           return {
             id: video.videoId,
-            title: cleaned.title || video.title,
-            artist: cleaned.artist || video.author?.name || artist,
+            title: cleanTitle,
+            artist: cleanArtist,
             thumbnail: video.thumbnail || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`,
-            duration: Number(video.seconds) || 0,
-            query: `${cleaned.artist || artist} ${cleaned.title || video.title}`.trim(),
+            duration,
+            query: `${cleanArtist} ${cleanTitle}`.trim(),
           };
-        });
+        }).filter(Boolean);
       } catch (error) {
         console.warn(`Daily Mix sanatçı araması başarısız (${artist}):`, error.message);
         return [];
