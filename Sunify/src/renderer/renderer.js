@@ -2142,7 +2142,7 @@ function renderNowPlayingDualGrid() {
   }
 
   container.innerHTML = '';
-  tracks.forEach((track, index) => {
+  tracks.slice(0, 6).forEach((track, index) => {
     const row = document.createElement('div');
     row.className = 'hm-track';
     row.tabIndex = 0;
@@ -2621,19 +2621,48 @@ function addToRecentHistory(track) {
 
 function renderRecentHistory() {
   const container = document.getElementById('continueCards');
+  const section = container?.closest('.hm-continue-section');
   if (!container) return;
   if (recentHistory.length === 0) {
-    container.innerHTML =
-      '<p class="hm-empty">Henüz dinlediğin bir şarkı yok. Bir şarkı başlatıldığında otomatik olarak buraya kaydedilecek!</p>';
-    updateContinueCarousel();
+    if (section) section.hidden = true;
+    container.innerHTML = '';
     return;
   }
+  if (section) section.hidden = false;
 
   container.innerHTML = '';
-  recentHistory.forEach((track, index) => {
-    container.appendChild(createHomeCoverCard(track, () => playSelectedTrack(track, recentHistory, index)));
+  recentHistory.slice(0, 6).forEach((track, index) => {
+    const mini = document.createElement('article');
+    mini.className = 'hm-continue-mini';
+    mini.tabIndex = 0;
+    mini.setAttribute('role', 'button');
+    mini.dataset.trackTitle = track.title || '';
+    mini.dataset.trackArtist = track.artist || '';
+    mini.__sunifyTrack = track;
+    mini.__sunifyTrackList = recentHistory;
+    mini.__sunifyTrackIndex = index;
+    mini.innerHTML = `
+      <img class="hm-continue-mini-thumb" alt="">
+      <div class="hm-continue-mini-meta">
+        <strong></strong>
+        <span class="hm-cover-artist"></span>
+      </div>
+      <span class="hm-continue-mini-play" aria-hidden="true"><i class="fa-solid fa-play"></i></span>
+    `;
+    mini.querySelector('img').src = track.thumbnail || PLACEHOLDER_COVER;
+    mini.querySelector('strong').textContent = track.title || '';
+    mini.querySelector('.hm-cover-artist').textContent = track.artist || '';
+    const onPlay = () => activatePlaylistTrack(track, recentHistory, index);
+    mini.onclick = onPlay;
+    mini.ondblclick = () => playSelectedTrack(track, recentHistory, index);
+    mini.onkeydown = (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        onPlay();
+      }
+    };
+    container.appendChild(mini);
   });
-  updateContinueCarousel();
   updateNowPlayingVisuals();
 }
 
@@ -7798,7 +7827,7 @@ initAccountSystem();
 
   document.addEventListener('contextmenu', (event) => {
     const trackEl = event.target.closest(
-      '.pl-track-row, .hm-track, .hm-cover, .artist-track-row, .queue-track-row, .playlist-recommendation-card, .spotlight-item:not(.spotlight-artist-result):not(.spotlight-playlist-result)'
+      '.pl-track-row, .hm-track, .hm-cover, .hm-continue-mini, .artist-track-row, .queue-track-row, .playlist-recommendation-card, .spotlight-item:not(.spotlight-artist-result):not(.spotlight-playlist-result)'
     );
     if (!trackEl) {
       closeTrackContextMenu();

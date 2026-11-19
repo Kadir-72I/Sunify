@@ -142,66 +142,60 @@
 
         <!-- 1. GÖRÜNÜM: ANA SAYFA (HOME) -->
         <section id="viewHome" class="view-section active home-v2">
-          <!-- Ana sayfa doğrudan kişisel mikslerle başlar. -->
-
-          <!-- GÜNLÜK MİXLER -->
+          <!-- 1. GÜNLÜK MİXLER + SUNIFY ÖZETİ -->
           <section class="hm-section">
-            <div class="hm-head">
+            <div class="hm-head hm-head-with-action">
               <h2><i class="fa-solid fa-compact-disc"></i> Günlük Mixler</h2>
+              <button class="hm-btn hm-wrapped-trigger" id="openWrappedModalBtn" type="button" title="Kişisel dinleme özetini görüntüle">
+                <i class="fa-solid fa-chart-simple"></i> Dinleme Özeti
+              </button>
             </div>
             <div class="hm-mix-row" id="dailyMixesGrid"></div>
           </section>
 
-          <!-- EN ÇOK DİNLENEN ŞARKILAR -->
+          <!-- 2. KALDIĞIN YERDEN DEVAM ET (KOMPAKT HIZLI ŞERİT) -->
+          <section class="hm-section hm-continue-section">
+            <div class="hm-head">
+              <h2><i class="fa-solid fa-clock-rotate-left"></i> Kaldığın yerden devam et</h2>
+            </div>
+            <div class="hm-continue-compact-wrap" id="continueCarousel">
+              <button class="hm-carousel-arrow hm-carousel-arrow-left" id="continuePreviousBtn" type="button" aria-label="Önceki şarkılar" hidden><i class="fa-solid fa-chevron-left"></i></button>
+              <div class="hm-continue-grid" id="continueCards"></div>
+              <button class="hm-carousel-arrow hm-carousel-arrow-right" id="continueNextBtn" type="button" aria-label="Sonraki şarkılar" hidden><i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+          </section>
+
+          <!-- 3. SANA ÖNERİLEN ŞARKILAR -->
+          <section class="hm-section" id="homeRecommendationsSection">
+            <div class="hm-head hm-head-with-action">
+              <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Sana önerilenler</h2>
+              <div class="hm-rec-toolbar">
+                <div class="hm-rec-mode-pills" id="homeRecommendationModeTabs" role="tablist" aria-label="Öneri modu">
+                  <button type="button" class="hm-rec-pill active" data-rec-mode="all" role="tab" aria-selected="true">Tümü</button>
+                  <button type="button" class="hm-rec-pill" data-rec-mode="discovery" role="tab" aria-selected="false">Keşif</button>
+                  <button type="button" class="hm-rec-pill" data-rec-mode="energetic" role="tab" aria-selected="false">Enerjik</button>
+                  <button type="button" class="hm-rec-pill" data-rec-mode="chill" role="tab" aria-selected="false">Chill</button>
+                </div>
+                <button class="hm-btn hm-rec-radio-btn" id="playHomeRecommendationsRadioBtn" type="button" title="Önerilen şarkılarla kesintisiz radyo başlat"><i class="fa-solid fa-play"></i> Radyo</button>
+                <button class="hm-btn hm-btn-icon" id="refreshHomeRecommendationsBtn" type="button" title="Önerileri yenile" aria-label="Önerileri yenile"><i class="fa-solid fa-rotate"></i></button>
+              </div>
+            </div>
+            <div class="hm-cover-row" id="homeRecommendationsGrid"><p class="hm-empty">Dinleme geçmişine göre öneriler hazırlanacak.</p></div>
+          </section>
+
+          <!-- 4. EN ÇOK DİNLENEN ŞARKILAR (KOMPAKT 2x3 PANEL) -->
           <section class="hm-section">
             <div class="hm-head">
-              <h2><i class="fa-solid fa-fire"></i> En çok dinlenen şarkılar</h2>
+              <h2><i class="fa-solid fa-fire"></i> En çok dinlenenler</h2>
             </div>
             <div class="hm-panel">
               <div class="hm-track-grid" id="nowPlayingDualGrid"></div>
             </div>
           </section>
 
-          <!-- SANA ÖNERİLENLER -->
-          <section class="hm-section" id="homeRecommendationsSection">
-            <div class="hm-head hm-head-with-action">
-              <div class="hm-title-action-group">
-                <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Sana önerilen şarkılar</h2>
-                <button class="hm-btn hm-btn-icon" id="refreshHomeRecommendationsBtn" type="button" title="Önerileri yenile" aria-label="Önerileri yenile"><i class="fa-solid fa-rotate"></i></button>
-                <button class="hm-btn hm-rec-radio-btn" id="playHomeRecommendationsRadioBtn" type="button" title="Önerilen şarkılarla kesintisiz radyo başlat"><i class="fa-solid fa-tower-broadcast"></i> Radyo Başlat</button>
-              </div>
-              <div class="hm-rec-mode-pills" id="homeRecommendationModeTabs" role="tablist" aria-label="Öneri modu">
-                <button type="button" class="hm-rec-pill active" data-rec-mode="all" role="tab" aria-selected="true">✨ Sana Özel</button>
-                <button type="button" class="hm-rec-pill" data-rec-mode="discovery" role="tab" aria-selected="false">🧭 Yeni Keşif</button>
-                <button type="button" class="hm-rec-pill" data-rec-mode="energetic" role="tab" aria-selected="false">🔥 Enerjik</button>
-                <button type="button" class="hm-rec-pill" data-rec-mode="chill" role="tab" aria-selected="false">🌙 Gece & Chill</button>
-              </div>
-            </div>
-            <div class="hm-cover-row" id="homeRecommendationsGrid"><p class="hm-empty">Dinleme geçmişine göre öneriler hazırlanacak.</p></div>
-          </section>
-
-          <!-- KALDIĞIN YERDEN DEVAM ET -->
-          <section class="hm-section">
-            <div class="hm-head">
-              <h2><i class="fa-solid fa-clock-rotate-left"></i> Kaldığın yerden devam et</h2>
-            </div>
-            <div class="hm-cover-carousel" id="continueCarousel">
-              <button class="hm-carousel-arrow hm-carousel-arrow-left" id="continuePreviousBtn" type="button" aria-label="Önceki şarkılar" title="Önceki şarkılar"><i class="fa-solid fa-chevron-left"></i></button>
-              <div class="hm-cover-row" id="continueCards"></div>
-              <button class="hm-carousel-arrow hm-carousel-arrow-right" id="continueNextBtn" type="button" aria-label="Sonraki şarkılar" title="Sonraki şarkılar"><i class="fa-solid fa-chevron-right"></i></button>
-            </div>
-          </section>
-
-          <!-- DİNLEME ÖZETİ -->
-          <section class="hm-section" id="listeningStatsSection">
-            <div class="hm-head hm-head-with-action">
-              <div class="hm-title-action-group">
-                <h2><i class="fa-solid fa-chart-line"></i> Dinleme özeti</h2>
-                <button class="hm-btn" id="openWrappedModalBtn" type="button" title="Kişisel dinleme özetini görüntüle"><i class="fa-solid fa-wand-magic-sparkles"></i> Sunify Özeti</button>
-              </div>
-            </div>
-            <div class="hm-stats" id="listeningStatsGrid"></div>
-          </section>
+          <div id="listeningStatsSection" hidden>
+            <div id="listeningStatsGrid"></div>
+          </div>
         </section>
 
         <!-- 2. GÖRÜNÜM: ÇALMA LİSTESİ İÇ DETAY SAYFASI -->
