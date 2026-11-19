@@ -56,7 +56,7 @@ try {
 
 const { fetchLyrics } = require('./services/audio/lyricsService');
 const { cleanTrackMetadata } = require('./services/audio/metadataCleaner');
-const { getDirectAudioUrl, startCachedAudioDownload, getCachedAudioByKey, writeAudioCacheMetadata, isProgressivelyPlayableAudio, listCachedAudioFiles, getAudioCacheStats, clearAudioCache, setAudioCacheLimit, getRuntimeStatus, getActiveExtractions, setQueryResolver, warmUp } = require('./services/audio/streamProxy');
+const { getDirectAudioUrl, startCachedAudioDownload, getCachedAudioByKey, writeAudioCacheMetadata, listCachedAudioFiles, getAudioCacheStats, clearAudioCache, setAudioCacheLimit, getRuntimeStatus, getActiveExtractions, setQueryResolver, warmUp } = require('./services/audio/streamProxy');
 const { updateDiscordPresence, clearDiscordPresence } = require('./services/rpc/discordRpcService');
 const { getLatestRelease } = require('./services/updateService');
 const {
@@ -81,35 +81,7 @@ const {
 const SEARCH_TTL_MS = 10 * 60 * 1000;
 const searchCache = new Map();
 const searchInFlight = new Map();
-const playbackWarmupQueue = [];
-const playbackWarmupQueued = new Set();
-let playbackWarmupWorkers = 0;
-function pumpPlaybackWarmupQueue() {
-  while (playbackWarmupWorkers < 2 && playbackWarmupQueue.length) {
-    const track = playbackWarmupQueue.shift();
-    const id = String(track?.id || '').trim();
-    if (!id) continue;
-    playbackWarmupWorkers += 1;
-    const startedAt = Date.now();
-    void startCachedAudioDownload(id, { priority: 'low' })
-      .then((audio) => {
-        console.info(`[play-warmup] ${id} first audio bytes ready in ${Date.now() - startedAt}ms${audio.complete ? ' (cache hit)' : ''}`);
-        if (track.title) {
-          const metadata = { ...track, id, query: track.query || `${track.artist || ''} ${track.title}`.trim() };
-          const persist = () => writeAudioCacheMetadata(audio.filePath, metadata);
-          if (audio.complete) void persist().catch((error) => console.warn('Ön hazırlık bilgisi kaydedilemedi:', error.message));
-          else void audio.completion.then(persist).catch((error) => console.warn('Ön hazırlık bilgisi kaydedilemedi:', error.message));
-        }
-      })
-      .catch((error) => console.warn(`[play-warmup] ${id} failed: ${error.message}`))
-      .finally(() => {
-        playbackWarmupQueued.delete(id);
-        playbackWarmupWorkers = Math.max(0, playbackWarmupWorkers - 1);
-        pumpPlaybackWarmupQueue();
-      });
-  }
-}
-function queuePlaybackWarmup(_videos) {
+function queuePlaybackWarmup() {
   // Arka plan CPU ve RAM tüketimini minimumda tutmak için arama/öneri listelerinde
   // otomatik toplu yt-dlp indirmesi yapılmaz; yalnızca çalan şarkı ve bitmesine yakın
   // sıradaki tek şarkı (/api/audio-prefetch) hazırlanır.
@@ -174,11 +146,22 @@ function createGrowingAudioStream(filePath, completion) {
   let pumping = false;
   let resumeRequested = false;
   let waitingForDrain = false;
+  let sharedHandle = null;
+  const readBuffer = Buffer.allocUnsafe(64 * 1024);
+  const closeSharedHandle = () => {
+    const handle = sharedHandle;
+    sharedHandle = null;
+    if (handle) handle.close().catch(() => {});
+  };
   const output = new Readable({
     read() {
       waitingForDrain = false;
       resumeRequested = true;
       pump();
+    },
+    destroy(err, callback) {
+      closeSharedHandle();
+      callback(err);
     },
   });
 
@@ -188,20 +171,17 @@ function createGrowingAudioStream(filePath, completion) {
     resumeRequested = false;
     try {
       while (!output.destroyed) {
-        const buffer = Buffer.allocUnsafe(64 * 1024);
         let bytesRead = 0;
-        let handle;
         try {
-          handle = await fs.promises.open(filePath, 'r');
-          ({ bytesRead } = await handle.read(buffer, 0, buffer.length, position));
+          if (!sharedHandle) sharedHandle = await fs.promises.open(filePath, 'r');
+          ({ bytesRead } = await sharedHandle.read(readBuffer, 0, readBuffer.length, position));
         } catch (error) {
+          closeSharedHandle();
           if (error.code !== 'ENOENT') throw error;
-        } finally {
-          await handle?.close().catch(() => {});
         }
         if (bytesRead) {
           position += bytesRead;
-          if (!output.push(buffer.subarray(0, bytesRead))) {
+          if (!output.push(Buffer.from(readBuffer.subarray(0, bytesRead)))) {
             waitingForDrain = true;
             break;
           }
@@ -213,12 +193,14 @@ function createGrowingAudioStream(filePath, completion) {
           new Promise((resolve) => setTimeout(() => resolve(false), 120)),
         ]);
         if (completed) {
+          closeSharedHandle();
           output.push(null);
           break;
         }
         if (!resumeRequested) break;
       }
     } catch (error) {
+      closeSharedHandle();
       output.destroy(error);
     } finally {
       pumping = false;
@@ -284,6 +266,11 @@ app.use(express.json({ limit: '2mb' }));
 app.use('/api', (req, res, next) => {
   const key = `${req.ip}:${req.path}`;
   const now = Date.now();
+  if (RATE_LIMITS.size > 200) {
+    for (const [k, v] of RATE_LIMITS.entries()) {
+      if (now > v.resetAt) RATE_LIMITS.delete(k);
+    }
+  }
   const current = RATE_LIMITS.get(key) || { count: 0, resetAt: now + 60_000 };
   if (now > current.resetAt) {
     current.count = 0;
@@ -876,8 +863,6 @@ app.get('/api/audio-stream', async (req, res) => {
   try {
     const requestStartedAt = Date.now();
     console.info(`[play-timing] request: ${target}`);
-    const range = req.headers.range;
-    const rangeStart = range && /^bytes=(\d+)-/.exec(range)?.[1];
     // Use yt-dlp's own progressive download path; the player reads the growing
     // cache file while the same download continues in the background.
     const audio = cacheKey

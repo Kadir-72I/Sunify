@@ -1,4 +1,7 @@
 // src/utils/colorExtractor.js
+let sharedCanvas = null;
+let sharedCtx = null;
+
 /**
  * Extract dominant RGB color from an image element or canvas.
  * @param {HTMLImageElement} imgElement
@@ -6,13 +9,15 @@
  */
 function extractDominantColor(imgElement) {
   try {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 40;
-    canvas.height = 40;
-    ctx.drawImage(imgElement, 0, 0, 40, 40);
+    if (!sharedCanvas) {
+      sharedCanvas = document.createElement('canvas');
+      sharedCanvas.width = 32;
+      sharedCanvas.height = 32;
+      sharedCtx = sharedCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    sharedCtx.drawImage(imgElement, 0, 0, 32, 32);
 
-    const imgData = ctx.getImageData(0, 0, 40, 40).data;
+    const imgData = sharedCtx.getImageData(0, 0, 32, 32).data;
     let r = 0,
       g = 0,
       b = 0,
@@ -33,7 +38,7 @@ function extractDominantColor(imgElement) {
       }
     }
 
-    if (count === 0) return { r: 99, g: 102, b: 241, hex: '#6366f1' }; // Fallback indigo
+    if (count === 0) return { r: 99, g: 102, b: 241, hex: '#6366f1' };
 
     r = Math.round(r / count);
     g = Math.round(g / count);

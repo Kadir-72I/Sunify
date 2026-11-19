@@ -6232,6 +6232,7 @@ function initAccountSystem() {
     if (adminSettingsNav) adminSettingsNav.hidden = !isAdminAccount;
     document.dispatchEvent(new CustomEvent('sunify:auth-changed', { detail: { isAdmin: isAdminAccount } }));
   }
+  window.sunifyUpdateProfileUI = updateProfileUI;
 
   // Ayarların sol altındaki profile tıklayınca doğrudan Hesap sekmesini aç
   if (settingsUserProfileBar) {
@@ -6720,7 +6721,7 @@ async function pullFromCloud() {
     if (validatedSession !== originalSession) {
       currentAuthSession = SunifyAccountStore.setActive(validatedSession);
       knownProfiles = SunifyAccountStore.list();
-      updateProfileUI();
+      window.sunifyUpdateProfileUI?.();
     }
   } catch (error) {
     if (currentAuthSession?.user?.id === originalSession.user?.id) {
@@ -7009,7 +7010,7 @@ initAccountSystem();
 
   // Crossfade & Şarkı sonu uyku zamanlayıcısı takibi
   audio.addEventListener('timeupdate', () => {
-    if (!currentTrack || !isPlaying || seekDragging || pendingSeekTarget !== null) return;
+    if (!currentTrack || !isPlaying || document.body.classList.contains('is-seeking') || pendingSeekTarget !== null) return;
     const duration = Number(audio.duration) || Number(currentTrack.duration) || 0;
     const current = Number(audio.currentTime) || 0;
     if (!(duration > 15)) return;

@@ -2,6 +2,7 @@
 // Sunify Discord Rich Presence (Doğrudan IPC Socket Motoru)
 // Discord Developer Portal'da kayıtlı onaylı "Sunify" uygulaması Client ID'si
 const net = require('net');
+const fs = require('fs');
 
 const CLIENT_ID = '1570821512984793228'; // Sunify Client ID
 let ipcSocket = null;
@@ -14,7 +15,7 @@ function getDiscordPipe() {
   for (let i = 0; i < 10; i++) {
     const pipePath = `${prefix}discord-ipc-${i}`;
     try {
-      return pipePath;
+      if (fs.existsSync(pipePath)) return pipePath;
     } catch (e) {}
   }
   return '\\\\?\\pipe\\discord-ipc-0';

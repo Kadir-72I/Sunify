@@ -1,10 +1,16 @@
 // src/utils/logger.js
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 class Logger {
   constructor() {
-    this.logDir = path.join(__dirname, '../../data/logs');
+    const baseDataDir = process.env.SUNIFY_USER_DB_FILE
+      ? path.dirname(process.env.SUNIFY_USER_DB_FILE)
+      : __dirname.includes('app.asar')
+        ? path.join(os.tmpdir(), 'SunifyPlayerData')
+        : path.join(__dirname, '../../data');
+    this.logDir = path.join(baseDataDir, 'logs');
     try {
       if (!fs.existsSync(this.logDir)) {
         fs.mkdirSync(this.logDir, { recursive: true });

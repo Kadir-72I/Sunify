@@ -20,7 +20,6 @@ const DOWNLOAD_TIMEOUT_MS = 120_000;
 const STREAM_START_BYTES = 4 * 1024;
 const AUDIO_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 let audioCacheMaxBytes = 3 * 1024 * 1024 * 1024;
-const AUDIO_FORWARD_HEADERS = new Set(['user-agent', 'accept', 'accept-language', 'sec-fetch-mode', 'referer', 'origin']);
 const FAST_YOUTUBE_EXTRACTOR_ARGS = ['--extractor-args', 'youtube:player_client=default,-tv_samsung'];
 const MAX_BACKGROUND_DOWNLOADS = 1;
 const MAX_QUEUED_BACKGROUND = 2;
@@ -617,7 +616,6 @@ async function startResolvedAudioDownload(requested, priority, excludeVideoIds =
     excludeVideoIds,
     retrySearch,
   });
-  const startedAt = Date.now();
   const target = /^[a-zA-Z0-9_-]{11}$/.test(query)
     ? `https://www.youtube.com/watch?v=${query}`
     : `ytsearch1:${query}`;
