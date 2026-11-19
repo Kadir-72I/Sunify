@@ -7,11 +7,24 @@ const DB_FILE = process.env.SUNIFY_USER_DB_FILE || path.join(__dirname, '../../.
 const SESSION_PREFIX = 'local_session_';
 const PASSWORD_SCRYPT_N = 16384;
 
+let cachedUsers = null;
+let cachedUsersMtimeMs = -1;
+
 function readUsers() {
   try {
-    if (!fs.existsSync(DB_FILE)) return [];
+    if (!fs.existsSync(DB_FILE)) {
+      cachedUsers = [];
+      cachedUsersMtimeMs = -1;
+      return [];
+    }
+    const stat = fs.statSync(DB_FILE);
+    if (cachedUsers && stat.mtimeMs === cachedUsersMtimeMs) {
+      return cachedUsers;
+    }
     const users = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     if (!Array.isArray(users)) throw new Error('Kullanıcı veritabanı biçimi geçersiz.');
+    cachedUsers = users;
+    cachedUsersMtimeMs = stat.mtimeMs;
     return users;
   } catch (error) {
     throw new Error(`Kullanıcı veritabanı okunamadı: ${error.message}`);
@@ -23,6 +36,13 @@ function writeUsers(users) {
   const tempFile = `${DB_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(tempFile, JSON.stringify(users, null, 2), { encoding: 'utf8', mode: 0o600 });
   fs.renameSync(tempFile, DB_FILE);
+  try {
+    cachedUsers = users;
+    cachedUsersMtimeMs = fs.statSync(DB_FILE).mtimeMs;
+  } catch {
+    cachedUsers = null;
+    cachedUsersMtimeMs = -1;
+  }
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {

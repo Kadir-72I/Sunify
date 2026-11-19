@@ -1,4 +1,9 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
+
+ipcRenderer.on('trim-renderer-memory', () => {
+  try { webFrame.clearCache(); } catch {}
+  try { if (typeof globalThis.gc === 'function') globalThis.gc(); } catch {}
+});
 
 contextBridge.exposeInMainWorld('sunifyAPI', {
   minimizeWindow: () => ipcRenderer.send('window-minimize'),

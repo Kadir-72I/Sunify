@@ -19,7 +19,14 @@ const { updatePresence, clearPresence, initRPC, setAccountChangedHandler } = req
 app.commandLine.appendSwitch('log-level', '3');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384');
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256 --expose-gc --optimize-for-size');
+app.commandLine.appendSwitch('disk-cache-size', '33554432');
+app.commandLine.appendSwitch('media-cache-size', '16777216');
+app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess,TranslateUI,AudioServiceOutOfProcess,HardwareMediaKeyHandling');
+app.commandLine.appendSwitch('disable-extensions');
+app.commandLine.appendSwitch('disable-print-preview');
+app.commandLine.appendSwitch('disable-speech-api');
+app.commandLine.appendSwitch('disable-component-update');
 
 let mainWindow;
 let discordAccountProfile = null;
@@ -79,6 +86,7 @@ ipcMain.on('secure-auth-store:delete', (event, key) => {
 });
 let miniPlayerWindow;
 let miniPlayerDismissed = false;
+let miniPlayerDestroyTimer = null;
 let appTray = null;
 let isQuittingApp = false;
 let closeToTrayEnabled = true;
@@ -337,7 +345,22 @@ function applyMiniPlayerSettings() {
   miniPlayerWindow.webContents.send('mini-player-opacity', miniPlayerSettings.opacity);
 }
 
+function trimProcessMemory() {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('trim-renderer-memory');
+    }
+  } catch {}
+  try {
+    if (typeof global.gc === 'function') global.gc();
+  } catch {}
+}
+
 function showMiniPlayer(force = false) {
+  if (miniPlayerDestroyTimer) {
+    clearTimeout(miniPlayerDestroyTimer);
+    miniPlayerDestroyTimer = null;
+  }
   if (!miniPlayerSettings.enabled || (!force && !miniPlayerSettings.onMinimize) || miniPlayerDismissed) return;
   if (!miniPlayerWindow || miniPlayerWindow.isDestroyed()) {
     const { BrowserWindow } = require('electron');
@@ -447,6 +470,7 @@ function createWindow() {
     [60, 250, 700].forEach((delay) => setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) showMiniPlayer();
     }, delay));
+    setTimeout(trimProcessMemory, 1200);
   };
   mainWindow.on('minimize', showMiniPlayerWhenMinimized);
   mainWindow.on('hide', showMiniPlayerWhenMinimized);
@@ -454,7 +478,19 @@ function createWindow() {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
     mainWindow.webContents.send('window-minimized-state', false);
     miniPlayerDismissed = false;
-    if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) miniPlayerWindow.hide();
+    if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+      miniPlayerWindow.hide();
+      // Ana pencere açıkken 2. renderer sürecini (mini-player) ~60 MB RAM tutmaması için 3 sn sonra kapat
+      if (miniPlayerDestroyTimer) clearTimeout(miniPlayerDestroyTimer);
+      miniPlayerDestroyTimer = setTimeout(() => {
+        miniPlayerDestroyTimer = null;
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && miniPlayerWindow && !miniPlayerWindow.isDestroyed() && !miniPlayerWindow.isVisible()) {
+          miniPlayerWindow.destroy();
+          miniPlayerWindow = null;
+          trimProcessMemory();
+        }
+      }, 3000);
+    }
   };
   mainWindow.on('restore', hideMiniPlayerWhenRestored);
   mainWindow.on('show', hideMiniPlayerWhenRestored);

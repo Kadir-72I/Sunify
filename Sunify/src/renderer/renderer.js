@@ -1275,6 +1275,17 @@ function transitionAppView(targetView, targetBtn, { scrollTop = 0, smoothScroll 
       view.classList.toggle('active', active);
       view.hidden = !active;
     });
+    // Sanatçı veya çalma listesi detay görünümünden çıkıldığında, görünmeyen yüzlerce
+    // DOM düğümünü ve kapak görseli bitmap'lerini serbest bırak (tekrar açıldığında zaten yeniden çizilir)
+    if (targetView !== viewArtist && targetView !== viewPlaylistDetail) {
+      document.getElementById('artistPopularTracks')?.replaceChildren();
+      document.getElementById('artistAlbumsGrid')?.replaceChildren();
+    }
+    if (targetView !== viewPlaylistDetail && playlistTracksContainer && playlistTracksContainer.childElementCount > 40) {
+      playlistTracksContainer.replaceChildren();
+      const recGrid = document.getElementById('playlistRecommendationsGrid');
+      if (recGrid) recGrid.replaceChildren();
+    }
     buttons.forEach((button) => button.classList.toggle('active', button === targetBtn));
     const scroller = document.getElementById('mainScrollableArea');
     if (scroller && Number.isFinite(Number(scrollTop))) {
@@ -1526,6 +1537,8 @@ function toggleSpotlightSearch() {
 function closeSpotlightSearch() {
   inlineSearchOverlay.classList.remove('active');
   spotlightInput.value = '';
+  // Arama penceresi kapandığında içerideki arama sonuçları DOM düğümlerini ve kapak bitmap'lerini serbest bırak
+  if (spotlightListContainer) spotlightListContainer.replaceChildren();
 }
 
 function setupSpotlightSearch() {
@@ -3573,8 +3586,23 @@ async function playSelectedTrack(track, playlist = [], index = 0, options = {}) 
   }
 }
 
+let lastPersistedResumeTrackKey = '';
+let lastPersistedPlaylistRef = null;
 function persistPlaybackResumeState(position = audio?.currentTime || 0) {
   if (!currentTrack?.title) return;
+  const trackKey = `${currentTrack.id || ''}|${currentTrack.artist || ''}|${currentTrack.title || ''}`;
+  const activeTracks = Array.isArray(activePlaylistData?.tracks) ? activePlaylistData.tracks : [];
+  const playlistRef = activeTracks.length ? activeTracks : currentPlaylist;
+
+  // Aynı şarkı ve aynı çalma listesi çalarken her 5 sn'de bir tüm listeyi (yüzlerce şarkı)
+  // yeniden kopyalayıp JSON üretmek yerine yalnızca position alanını güncelle
+  if (playbackResumeState && lastPersistedResumeTrackKey === trackKey && lastPersistedPlaylistRef === playlistRef) {
+    playbackResumeState.position = Math.max(0, Number(position) || 0);
+    playbackResumeState.savedAt = Date.now();
+    writeAccountJson('sunify_playback_state', playbackResumeState);
+    return;
+  }
+
   const compactTrack = (track) => ({
     id: track.id || '',
     title: track.title || '',
@@ -3585,7 +3613,6 @@ function persistPlaybackResumeState(position = audio?.currentTime || 0) {
     localUrl: track.localUrl || '',
     isLocal: Boolean(track.isLocal),
   });
-  const activeTracks = Array.isArray(activePlaylistData?.tracks) ? activePlaylistData.tracks : [];
   const trackMatches = (track) => track && (
     (currentTrack.id && track.id && String(currentTrack.id) === String(track.id)) ||
     (String(track.title || '').toLocaleLowerCase() === String(currentTrack.title || '').toLocaleLowerCase() &&
@@ -3593,14 +3620,19 @@ function persistPlaybackResumeState(position = audio?.currentTime || 0) {
   );
   const playlistTracks = activeTracks.some(trackMatches) ? activeTracks : currentPlaylist;
   const playlistIndex = playlistTracks.findIndex(trackMatches);
+  // RAM ve localStorage şişmesini önlemek için devam durumu en fazla 60 şarkı saklar
+  const startSlice = Math.max(0, playlistIndex - 15);
+  const boundedTracks = playlistTracks.slice(startSlice, startSlice + 60);
+  lastPersistedResumeTrackKey = trackKey;
+  lastPersistedPlaylistRef = playlistRef;
   playbackResumeState = {
     track: compactTrack(currentTrack),
     position: Math.max(0, Number(position) || 0),
     playlist: {
       id: activeTracks.some(trackMatches) ? (activePlaylistData.id || '') : '',
       name: activeTracks.some(trackMatches) ? (activePlaylistData.name || '') : '',
-      tracks: playlistTracks.map(compactTrack),
-      index: playlistIndex >= 0 ? playlistIndex : 0,
+      tracks: boundedTracks.map(compactTrack),
+      index: playlistIndex >= 0 ? (playlistIndex - startSlice) : 0,
     },
     savedAt: Date.now(),
   };
@@ -4771,12 +4803,20 @@ function readDiscordRpcSettings() {
 
 // Şarkı Kapağının Baskın Rengine Göre Söz Arka Planını Güncelle
 let coverColorRequestId = 0;
+const coverColorCache = new Map();
+let sharedColorCanvas = null;
+let sharedColorCtx = null;
+
 async function applyCoverAdaptiveColor(coverUrl) {
   if (!coverUrl) return;
   const requestId = ++coverColorRequestId;
 
   function setGradient(r, g, b) {
     if (requestId !== coverColorRequestId) return;
+    if (!coverColorCache.has(coverUrl)) {
+      if (coverColorCache.size >= 80) coverColorCache.delete(coverColorCache.keys().next().value);
+      coverColorCache.set(coverUrl, [r, g, b]);
+    }
     const accentHex = `#${[r, g, b].map((channel) => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0')).join('')}`;
     const coverAlpha = document.body.dataset.theme === 'light' ? 0.22 : 0.4;
     document.body.style.setProperty('--cover-color-solid', `rgb(${r}, ${g}, ${b})`);
@@ -4809,18 +4849,27 @@ async function applyCoverAdaptiveColor(coverUrl) {
     publishMiniPlayerState();
   }
 
-  // 1. Tarayıcı içi hızlı Canvas analizi (CORS hatası veya ağ gecikmesi olmadan %100 çalışır)
+  // Önbellekte varsa yeni Image + Canvas oluşturmadan doğrudan uygula (sıfır RAM tahsisi)
+  const cachedRgb = coverColorCache.get(coverUrl);
+  if (cachedRgb) {
+    setGradient(cachedRgb[0], cachedRgb[1], cachedRgb[2]);
+    return;
+  }
+
+  // 1. Tarayıcı içi hızlı Canvas analizi (tek paylaşımlı 32x32 canvas)
   try {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = 40;
-        canvas.height = 40;
-        ctx.drawImage(img, 0, 0, 40, 40);
-        const imgData = ctx.getImageData(0, 0, 40, 40).data;
+        if (!sharedColorCanvas) {
+          sharedColorCanvas = document.createElement('canvas');
+          sharedColorCanvas.width = 32;
+          sharedColorCanvas.height = 32;
+          sharedColorCtx = sharedColorCanvas.getContext('2d', { willReadFrequently: true });
+        }
+        sharedColorCtx.drawImage(img, 0, 0, 32, 32);
+        const imgData = sharedColorCtx.getImageData(0, 0, 32, 32).data;
         let r = 0,
           g = 0,
           b = 0,
@@ -4831,6 +4880,8 @@ async function applyCoverAdaptiveColor(coverUrl) {
           b += imgData[i + 2];
           count++;
         }
+        img.onload = null;
+        img.src = '';
         if (count > 0) {
           setGradient(Math.round(r / count), Math.round(g / count), Math.round(b / count));
           return;
