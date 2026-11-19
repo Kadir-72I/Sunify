@@ -768,3 +768,182 @@ html body:not([data-theme='light']) .titlebar-window-controls .win-btn:not(.win-
   #playlistRecommendationsSection { margin-inline:0; padding:12px !important; }
   #viewLibrary { padding-inline:8px !important; }
 }
+
+/* =====================================================================
+   ÜST BAŞLIK ÇUBUĞU (TITLEBAR), SOL KAPSÜL & ANA SAYFA ÜST DÜZEN İYİLEŞTİRMESİ
+   ===================================================================== */
+.custom-titlebar {
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: 0 14px 0 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.titlebar-drag-region {
+  position: relative;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex: 1;
+  height: 100%;
+}
+
+.custom-titlebar .titlebar-brand {
+  margin-left: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  padding: 4px 13px 4px 5px !important;
+  border-radius: 999px !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 14px rgba(0, 0, 0, 0.2) !important;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.custom-titlebar .titlebar-brand:hover {
+  border-color: color-mix(in srgb, var(--accent-color, #a78bfa) 55%, rgba(255, 255, 255, 0.25)) !important;
+  transform: translateY(-0.5px);
+}
+
+.custom-titlebar .titlebar-brand-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  color: #fff;
+  background:
+    radial-gradient(120% 140% at 30% 0%, rgba(255, 255, 255, 0.35), transparent 60%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-color, #a78bfa) 88%, white), color-mix(in srgb, var(--accent-color, #a78bfa) 48%, #1a1028));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 0 14px color-mix(in srgb, var(--accent-color, #a78bfa) 38%, transparent);
+  transition: background 0.45s ease, box-shadow 0.45s ease;
+}
+.custom-titlebar .titlebar-brand svg {
+  width: 15px !important;
+  height: 15px !important;
+}
+
+.custom-titlebar .titlebar-title {
+  display: inline-block !important;
+  font-size: 13.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+  color: #fff !important;
+}
+
+/* Ortadaki Hızlı Arama Kapsülü */
+.titlebar-search-pill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(390px, 38vw);
+  height: 32px;
+  padding: 0 12px 0 13px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 4px 14px rgba(0, 0, 0, 0.18) !important;
+  color: rgba(255, 255, 255, 0.68) !important;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.titlebar-search-pill i {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--accent-color, #a78bfa) 80%, white);
+}
+.titlebar-search-pill span {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.titlebar-search-pill kbd {
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font: 700 10.5px/1.35 inherit;
+  color: rgba(255, 255, 255, 0.75);
+}
+.titlebar-search-pill:hover {
+  color: #fff !important;
+  border-color: color-mix(in srgb, var(--accent-color, #a78bfa) 55%, rgba(255, 255, 255, 0.28)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 6px 18px rgba(0, 0, 0, 0.26) !important;
+}
+
+/* Sağ Üst Pencere Kontrolleri: Kalın 3B Kutu Çerçevelerini Kaldır, Tek Zarif Kapsül Yap */
+html body:not([data-theme='light']) .titlebar-window-controls {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  height: 32px !important;
+  padding: 3px !important;
+  margin: 0 !important;
+  border-radius: 999px !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 4px 14px rgba(0, 0, 0, 0.2) !important;
+}
+html body:not([data-theme='light']) .titlebar-window-controls .win-btn {
+  width: 32px !important;
+  height: 24px !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  color: rgba(255, 255, 255, 0.74) !important;
+  transform: none !important;
+  filter: none !important;
+}
+html body:not([data-theme='light']) .titlebar-window-controls .win-btn:not(.win-close):hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+html body:not([data-theme='light']) .titlebar-window-controls .win-btn.win-close:hover {
+  background: linear-gradient(135deg, #f43f5e, #e11d48) !important;
+  color: #fff !important;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.45) !important;
+}
+
+/* Sol Kenar Kapsülü ile Ana İçerik ("Günlük Mixler") Arasına Ferah Boşluk */
+.app-layout {
+  height: calc(100vh - 48px) !important;
+}
+html body:not([data-theme='light']) .sidebar {
+  margin: 4px 0 10px 10px !important;
+}
+#viewHome.home-v2 {
+  padding: 6px 18px 48px 22px !important;
+}
+#viewPlaylistDetail {
+  padding-left: 20px !important;
+}
+@media (max-width: 720px) {
+  .titlebar-search-pill {
+    width: 180px;
+  }
+  .titlebar-search-pill kbd {
+    display: none;
+  }
+  #viewHome.home-v2 {
+    padding: 6px 10px 44px 14px !important;
+  }
+}

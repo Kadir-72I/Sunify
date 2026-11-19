@@ -1156,6 +1156,12 @@ document.addEventListener('DOMContentLoaded', () => {
     playSelectedTrack(radioQueue[0], radioQueue, 0);
     showAppNotification('Öneri Radyosu Başlatıldı', `${radioQueue.length} parçalık kişisel öneri sırası çalıyor.`);
   });
+  document.getElementById('titlebarSearchBtn')?.addEventListener('click', () => {
+    navSearchTriggerBtn?.click();
+  });
+  document.getElementById('titlebarBrandBtn')?.addEventListener('click', () => {
+    navHomeBtn?.click();
+  });
   setupContinueCarousel();
   renderRecentHistory();
   renderLibraryItems();
