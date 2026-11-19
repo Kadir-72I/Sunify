@@ -22,13 +22,11 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK Licenses & Install API 35
+      - name: Accept Android SDK Licenses & Ensure API 35
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          SDK_MGR="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDK_MGR" --licenses > /dev/null 2>&1 || true
+          "$SDK_MGR" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -37,7 +35,17 @@ jobs:
 
       - name: Build Debug APK
         working-directory: Sunify/mobile-android
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log
+
+      - name: Report Build Error to Summary
+        if: failure()
+        run: |
+          echo "### Gradle Build Error" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 120 /tmp/gradle-build.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Copy & Rename APK
         run: |
