@@ -1,0 +1,6 @@
+[auth]
+site_url = "sunify://auth/callback"
+additional_redirect_urls = ["sunify://auth/callback"]
+
+[functions.sunify-admin]
+verify_jwt = false

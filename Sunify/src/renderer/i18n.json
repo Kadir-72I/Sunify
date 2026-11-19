@@ -1,0 +1,16 @@
+{
+  "play": "Oynat",
+  "pause": "Duraklat",
+  "next": "Sonraki Parça",
+  "prev": "Önceki Parça",
+  "shuffle": "Karıştır",
+  "repeat": "Tekrarla",
+  "lyrics": "Şarkı Sözleri",
+  "volume": "Ses Seviyesi",
+  "speed": "Oynatma Hızı",
+  "search": "Ara",
+  "minimize": "Simge Durumuna Küçült",
+  "maximize": "Ekranı Kapla",
+  "close": "Kapat",
+  "fullscreen": "Tam Ekran"
+}

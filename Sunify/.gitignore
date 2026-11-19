@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/runtime/
+build/*.bmp
+build/*.ico
+downloads/
+data/logs/
+data/sunify_users.json
+.env
+.env.*
+!.env.example
+supabase/.temp/

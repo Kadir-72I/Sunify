@@ -1,0 +1,123 @@
+{
+  "name": "sunify",
+  "version": "1.0.1",
+  "description": "YouTube Music & LRCLIB Desktop Player",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron src/main/main.js",
+    "server": "node src/server.js",
+    "build:win": "node scripts/prepare-windows-runtimes.js && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-installer-artwork.ps1 && electron-builder --win nsis --x64 --publish never",
+    "lint": "eslint src --ext .js",
+    "format": "prettier --write src",
+    "test": "node --test tests/*.test.js",
+    "setup:python": "python -m pip install --upgrade yt-dlp"
+  },
+  "keywords": [
+    "music",
+    "youtube-music",
+    "lrclib",
+    "spotify-alternative",
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "discord-rpc": "^4.0.1",
+    "express": "^5.2.1",
+    "node-vibrant": "^3.1.6",
+    "yt-search": "2.13.1"
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "prettier": "^3.2.5",
+    "supabase": "^3.1.0"
+  },
+  "build": {
+    "appId": "com.sunify.desktop",
+    "productName": "Sunify",
+    "protocols": [
+      {
+        "name": "Sunify email verification",
+        "schemes": [
+          "sunify"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "data/supabase_config.json",
+      "package.json",
+      "!**/*.map",
+      "!data/sunify_users.json",
+      "!data/logs/**",
+      "!downloads/**",
+      "!tests/**",
+      "!.git/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "Sunify-Setup-${version}.${ext}",
+      "icon": "build/sunify.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/sunify.ico",
+      "uninstallerIcon": "build/sunify.ico",
+      "installerHeader": "build/installer-header.bmp",
+      "installerSidebar": "build/installer-sidebar.bmp",
+      "include": "build/installer.nsh",
+      "language": "1055",
+      "uninstallDisplayName": "Sunify",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "installerLanguages": [
+        "tr_TR"
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "build/runtime/yt-dlp",
+        "to": "sunify-tools/yt-dlp"
+      },
+      {
+        "from": "build/runtime/deno.exe",
+        "to": "sunify-tools/deno.exe"
+      },
+      {
+        "from": "build/runtime/THIRD-PARTY-NOTICES.txt",
+        "to": "sunify-tools/THIRD-PARTY-NOTICES.txt"
+      }
+    ],
+    "compression": "maximum",
+    "electronLanguages": [
+      "tr",
+      "en-US"
+    ]
+  },
+  "overrides": {
+    "redstar": {
+      "minimatch": "^3.1.5"
+    },
+    "phin": "^3.7.1",
+    "@electron/universal": {
+      "minimatch": "^11.0.1"
+    },
+    "app-builder-lib": {
+      "minimatch": "^11.0.1"
+    }
+  }
+}
