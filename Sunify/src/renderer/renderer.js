@@ -1766,6 +1766,11 @@ async function executeSpotlightQuery(query) {
         item.querySelector('.spotlight-title').textContent = track.title;
         item.querySelector('.spotlight-artist').textContent = track.artist;
         item.querySelector('.spotlight-duration').textContent = formatTime(track.duration);
+        item.dataset.trackTitle = track.title || '';
+        item.dataset.trackArtist = track.artist || '';
+        item.__sunifyTrack = track;
+        item.__sunifyTrackList = tracks;
+        item.__sunifyTrackIndex = index;
         bindTrackAudioPrefetch(item, track);
         item.onclick = () => {
           addToSearchHistory(track);
@@ -1984,7 +1989,21 @@ function renderArtistProfile() {
     row.querySelector('.artist-track-title').textContent = track.title;
     row.querySelector('.artist-track-subtitle').textContent = track.artist;
     row.querySelector('.artist-track-duration').textContent = formatTime(track.duration);
-    row.onclick = () => playSelectedTrack(track, tracks, index);
+    row.__sunifyTrack = track;
+    row.__sunifyTrackList = tracks;
+    row.__sunifyTrackIndex = index;
+    row.onclick = (event) => {
+      if (event.target.closest('.artist-track-more')) {
+        event.stopPropagation();
+        if (typeof window.sunifyOpenTrackContextMenu === 'function') {
+          const rect = event.target.getBoundingClientRect();
+          window.sunifyOpenTrackContextMenu(track, rect.left, rect.bottom + 4, tracks, index);
+        }
+        return;
+      }
+      activatePlaylistTrack(track, tracks, index);
+    };
+    row.ondblclick = () => playSelectedTrack(track, tracks, index);
     trackList.appendChild(row);
   });
   const showAll = document.getElementById('artistShowAllTracksBtn');
@@ -2084,8 +2103,12 @@ function renderNowPlayingDualGrid() {
     row.querySelector('.hm-track-meta strong').textContent = track.title;
     row.querySelector('.hm-track-meta span').textContent = track.artist;
     row.querySelector('.hm-track-count').textContent = `${track.playCount} dinleme`;
-    const play = () => playSelectedTrack(track, tracks, index);
+    row.__sunifyTrack = track;
+    row.__sunifyTrackList = tracks;
+    row.__sunifyTrackIndex = index;
+    const play = () => activatePlaylistTrack(track, tracks, index);
     row.onclick = play;
+    row.ondblclick = () => playSelectedTrack(track, tracks, index);
     row.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); play(); } };
     container.appendChild(row);
   });
@@ -2432,6 +2455,7 @@ function createHomeCoverCard(track, onPlay) {
   card.setAttribute('role', 'button');
   card.dataset.trackTitle = track.title || '';
   card.dataset.trackArtist = track.artist || '';
+  card.__sunifyTrack = track;
   bindTrackAudioPrefetch(card, track);
   card.innerHTML = '<span class="hm-cover-art"><img alt=""><i class="fa-solid fa-play"></i></span><strong></strong><span class="hm-cover-artist"></span>';
   card.querySelector('img').src = track.thumbnail || PLACEHOLDER_COVER;
@@ -2664,14 +2688,23 @@ function activatePlaylistTrack(track, tracks, index) {
   playSelectedTrack(track, tracks, index);
 }
 
+let playlistDragSourceIndex = -1;
+
 function renderPlaylistTracks(tracks) {
   playlistTracksContainer.innerHTML = '';
+  const isEditableCustomPlaylist = Boolean(
+    activePlaylistData &&
+      customPlaylists.some((p) => p.id === activePlaylistData.id || p.name === activePlaylistData.name)
+  );
 
   tracks.forEach((track, index) => {
     const row = document.createElement('div');
     row.className = `pl-track-row ${currentTrack && currentTrack.title === track.title ? 'playing is-current-track' : ''}`;
     row.dataset.trackTitle = track.title;
     row.dataset.trackArtist = track.artist;
+    row.__sunifyTrack = track;
+    row.__sunifyTrackList = tracks;
+    row.__sunifyTrackIndex = index;
     bindTrackAudioPrefetch(row, track);
     row.innerHTML = `
       <img class="pl-track-thumb" src="${track.thumbnail || 'https://via.placeholder.com/50'}" alt="${track.title}">
@@ -2716,7 +2749,43 @@ function renderPlaylistTracks(tracks) {
       removeTrackFromPlaylist(track, index);
     };
 
+    if (isEditableCustomPlaylist) {
+      row.draggable = true;
+      row.addEventListener('dragstart', (event) => {
+        playlistDragSourceIndex = index;
+        row.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', String(index));
+        }
+      });
+      row.addEventListener('dragend', () => {
+        playlistDragSourceIndex = -1;
+        row.classList.remove('is-dragging');
+        playlistTracksContainer.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+      });
+      row.addEventListener('dragover', (event) => {
+        if (playlistDragSourceIndex < 0 || playlistDragSourceIndex === index) return;
+        event.preventDefault();
+        row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => {
+        row.classList.remove('drag-over');
+      });
+      row.addEventListener('drop', (event) => {
+        event.preventDefault();
+        row.classList.remove('drag-over');
+        if (playlistDragSourceIndex < 0 || playlistDragSourceIndex === index || !activePlaylistData?.tracks) return;
+        const [moved] = activePlaylistData.tracks.splice(playlistDragSourceIndex, 1);
+        activePlaylistData.tracks.splice(index, 0, moved);
+        playlistDragSourceIndex = -1;
+        persistPlaylistChanges();
+        renderPlaylistTracks(activePlaylistData.tracks);
+      });
+    }
+
     row.onclick = () => activatePlaylistTrack(track, tracks, index);
+    row.ondblclick = () => playSelectedTrack(track, tracks, index);
     playlistTracksContainer.appendChild(row);
   });
 }
@@ -3020,6 +3089,11 @@ function renderQueueDrawer() {
     row.className = 'queue-track-row';
     row.draggable = true;
     row.dataset.queueIndex = String(index);
+    row.dataset.trackTitle = track.title || '';
+    row.dataset.trackArtist = track.artist || '';
+    row.__sunifyTrack = track;
+    row.__sunifyTrackList = currentPlaylist;
+    row.__sunifyTrackIndex = index;
 
     const cover = document.createElement('img');
     cover.src = track.thumbnail || PLACEHOLDER_COVER;
@@ -3186,6 +3260,11 @@ async function loadPlaylistRecommendations(playlist, refreshSearch = false) {
       const card = document.createElement('div');
       card.className = 'playlist-recommendation-card';
       card.tabIndex = 0;
+      card.dataset.trackTitle = track.title || '';
+      card.dataset.trackArtist = track.artist || '';
+      card.__sunifyTrack = track;
+      card.__sunifyTrackList = picks;
+      card.__sunifyTrackIndex = picks.indexOf(track);
       card.setAttribute('role', 'group');
       card.setAttribute('aria-label', `${track.title || 'Şarkı'} — ${track.artist || ''}. Şarkıyı çalmak için karta tıkla.`);
       const playTrack = () => playSelectedTrack(track, picks, picks.indexOf(track));
@@ -4619,6 +4698,19 @@ function setupAudioEvents() {
 
   // Basılı tutup sürükleyerek konum seçme (ses çubuğundaki gibi).
   let seekDragging = false;
+  const playerSeekTooltip = document.getElementById('playerSeekTooltip');
+  function updateSeekTooltip(ratio, visible = true) {
+    if (!playerSeekTooltip || !progressBarContainer) return;
+    const duration = audio.duration || currentTrack?.duration || 0;
+    if (!(duration > 0)) {
+      playerSeekTooltip.classList.remove('is-visible');
+      return;
+    }
+    const clampedPct = Math.max(8, Math.min(92, ratio * 100));
+    progressBarContainer.style.setProperty('--seek-x', `${clampedPct}%`);
+    playerSeekTooltip.textContent = `${formatTime(ratio * duration)} / ${formatTime(duration)}`;
+    playerSeekTooltip.classList.toggle('is-visible', Boolean(visible));
+  }
   function seekRatio(event, container) {
     const rect = container.getBoundingClientRect();
     return rect.width > 0 ? Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) : 0;
@@ -4630,6 +4722,7 @@ function setupAudioEvents() {
     if (lyricsProgressFill) lyricsProgressFill.style.width = `${ratio * 100}%`;
     currentTimeLabel.textContent = label;
     lyricsCurrentTime.textContent = label;
+    updateSeekTooltip(ratio, true);
     if (parsedLyrics.length) syncActiveLyric(ratio * duration);
   }
   function attachSeekDrag(container, guard) {
@@ -4663,7 +4756,19 @@ function setupAudioEvents() {
 
   const playerCapsule = document.querySelector('.player-floating-capsule');
   if (playerCapsule) {
-    attachSeekDrag(playerCapsule, (event) => !event.target.closest('button, input, a, select, label, .player-volume-popover, .audio-tool-popover'));
+    const seekGuard = (event) => !event.target.closest('button, input, a, select, label, .player-volume-popover, .audio-tool-popover');
+    attachSeekDrag(playerCapsule, seekGuard);
+    playerCapsule.addEventListener('pointermove', (event) => {
+      if (seekDragging) return;
+      if (!seekGuard(event)) {
+        playerSeekTooltip?.classList.remove('is-visible');
+        return;
+      }
+      updateSeekTooltip(seekRatio(event, playerCapsule), true);
+    });
+    playerCapsule.addEventListener('pointerleave', () => {
+      if (!seekDragging) playerSeekTooltip?.classList.remove('is-visible');
+    });
   }
   attachSeekDrag(lyricsProgressContainer);
   // Şarkının gerçek süresi sonradan öğrenilirse sözleri doğru sürümle yeniden eşleştir.
@@ -4840,14 +4945,23 @@ let coverColorRequestId = 0;
 const coverColorCache = new Map();
 let sharedColorCanvas = null;
 let sharedColorCtx = null;
+const ACCENT_PRESET_RGB = {
+  amethyst: [167, 139, 250],
+  emerald: [16, 185, 129],
+  amber: [245, 158, 11],
+  ocean: [6, 182, 212],
+  crimson: [244, 63, 94],
+};
 
 async function applyCoverAdaptiveColor(coverUrl) {
-  if (!coverUrl) return;
+  const lockedPreset = localStorage.getItem('sunify_accent_preset') || 'auto';
+  const presetRgb = ACCENT_PRESET_RGB[lockedPreset] || null;
+  if (!coverUrl && !presetRgb) return;
   const requestId = ++coverColorRequestId;
 
-  function setGradient(r, g, b) {
+  function setGradient(r, g, b, cacheCover = true) {
     if (requestId !== coverColorRequestId) return;
-    if (!coverColorCache.has(coverUrl)) {
+    if (cacheCover && coverUrl && !coverColorCache.has(coverUrl)) {
       if (coverColorCache.size >= 80) coverColorCache.delete(coverColorCache.keys().next().value);
       coverColorCache.set(coverUrl, [r, g, b]);
     }
@@ -4877,10 +4991,15 @@ async function applyCoverAdaptiveColor(coverUrl) {
       'important'
     );
     const backdrop = document.getElementById('lyricsBackdrop');
-    if (backdrop) {
+    if (backdrop && coverUrl) {
       backdrop.style.backgroundImage = `url("${coverUrl}")`;
     }
     publishMiniPlayerState();
+  }
+
+  if (presetRgb) {
+    setGradient(presetRgb[0], presetRgb[1], presetRgb[2], false);
+    return;
   }
 
   // Önbellekte varsa yeni Image + Canvas oluşturmadan doğrudan uygula (sıfır RAM tahsisi)
@@ -5146,14 +5265,24 @@ function setupMiniPlayerSettings() {
     localStorage.setItem('sunify_setting_overlay_always_on_top', String(alwaysOnTop.checked));
     publish();
   };
-  enabled.onchange = syncSettings;
-  onMinimize.onchange = syncSettings;
-  alwaysOnTop.onchange = syncSettings;
+  enabled.onchange = () => {
+    syncSettings();
+    showAppNotification('Masaüstü Katmanı', enabled.checked ? 'Masaüstü katmanı etkinleştirildi.' : 'Masaüstü katmanı kapatıldı.');
+  };
+  onMinimize.onchange = () => {
+    syncSettings();
+    showAppNotification('Katman Ayarı', onMinimize.checked ? 'Simge durumunda katman otomatik gösterilecek.' : 'Simge durumunda otomatik gösterim kapatıldı.');
+  };
+  alwaysOnTop.onchange = () => {
+    syncSettings();
+    showAppNotification('Katman Ayarı', alwaysOnTop.checked ? 'Katman her zaman üstte tutulacak.' : 'Her zaman üstte özelliği kapatıldı.');
+  };
   opacity?.addEventListener('input', () => {
     const value = Math.max(35, Math.min(100, Number(opacity.value) || 88));
     if (opacityValue) opacityValue.value = `${value}%`;
     localStorage.setItem('sunify_setting_overlay_opacity', String(value));
     window.sunifyAPI?.updateMiniPlayerOpacity?.(value / 100);
+    if (enabled.checked) window.sunifyAPI?.toggleMiniPlayer?.(true);
   });
 
   positionGroup?.querySelectorAll('.pill-btn').forEach((button) => {
@@ -5161,6 +5290,8 @@ function setupMiniPlayerSettings() {
       positionGroup.querySelectorAll('.pill-btn').forEach((item) => item.classList.toggle('active', item === button));
       localStorage.setItem('sunify_setting_overlay_pos', button.dataset.val);
       publish();
+      if (enabled.checked) window.sunifyAPI?.toggleMiniPlayer?.(true);
+      showAppNotification('Katman Konumu', `Konum güncellendi: ${button.textContent.trim()}`);
     };
   });
   sizeGroup?.querySelectorAll('.pill-btn').forEach((button) => {
@@ -5168,8 +5299,21 @@ function setupMiniPlayerSettings() {
       sizeGroup.querySelectorAll('.pill-btn').forEach((item) => item.classList.toggle('active', item === button));
       localStorage.setItem('sunify_setting_overlay_size', button.dataset.val);
       publish();
+      if (enabled.checked) window.sunifyAPI?.toggleMiniPlayer?.(true);
+      showAppNotification('Katman Boyutu', `Boyut güncellendi: ${button.textContent.trim()}`);
     };
   });
+  const btnToggleOverlayNow = document.getElementById('btnToggleOverlayNow');
+  if (btnToggleOverlayNow) {
+    btnToggleOverlayNow.onclick = () => {
+      if (!enabled.checked) {
+        enabled.checked = true;
+        syncSettings();
+      }
+      window.sunifyAPI?.toggleMiniPlayer?.();
+      showAppNotification('Masaüstü Katmanı', 'Mini oynatıcı katmanı açıldı / kapatıldı.');
+    };
+  }
   publish();
 }
 
@@ -5306,8 +5450,10 @@ function setupSettingsModal() {
 
   // Depolama & Önbellek Butonları
   const storedLimit = (key, allowed, fallback) => {
-    const value = Number(localStorage.getItem(key));
-    return allowed.includes(value) ? value : fallback;
+    const raw = localStorage.getItem(key);
+    if (raw === null || raw.trim() === '') return fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) && allowed.includes(value) ? value : fallback;
   };
   let downloadLimitGB = storedLimit('sunify_setting_download_limit', [0, 2, 5, 20], 5);
   let cacheLimitGB = storedLimit('sunify_setting_cache_limit', [0, 0.25, 0.5, 1, 3], 0.5);
@@ -7154,4 +7300,351 @@ initAccountSystem();
       }
     }
   }).observe(document.body, { childList: true, subtree: true });
+
+  // 10. Görünüm & Vurgu Rengi Ön Ayarları (Accent Presets, Tema Kartı, Dil Kutusu)
+  const accentGroup = document.getElementById('settingAccentTheme');
+  const applyAccentPresetSelection = (presetKey, notify = false) => {
+    const valid = ['auto', 'amethyst', 'emerald', 'amber', 'ocean', 'crimson'].includes(presetKey)
+      ? presetKey
+      : 'auto';
+    localStorage.setItem('sunify_accent_preset', valid);
+    accentGroup?.querySelectorAll('.pill-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.accent === valid);
+    });
+    if (valid === 'auto') {
+      if (currentTrack?.thumbnail) {
+        void applyCoverAdaptiveColor(currentTrack.thumbnail);
+      } else {
+        localStorage.setItem('sunify_accent_preset', 'amethyst');
+        void applyCoverAdaptiveColor('');
+        localStorage.setItem('sunify_accent_preset', 'auto');
+      }
+    } else {
+      void applyCoverAdaptiveColor(currentTrack?.thumbnail || '');
+    }
+    if (notify) {
+      const activeBtn = accentGroup?.querySelector(`.pill-btn[data-accent="${valid}"]`);
+      showAppNotification('Vurgu Rengi', `Tema tonu güncellendi: ${activeBtn?.textContent?.trim() || valid}`);
+    }
+  };
+  applyAccentPresetSelection(localStorage.getItem('sunify_accent_preset') || 'auto', false);
+  accentGroup?.querySelectorAll('.pill-btn').forEach((btn) => {
+    btn.addEventListener('click', () => applyAccentPresetSelection(btn.dataset.accent, true));
+  });
+  document.querySelectorAll('.theme-card').forEach((card) => {
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.theme-card').forEach((c) => c.classList.toggle('active', c === card));
+      showAppNotification('Görünüm Teması', 'Koyu cam teması etkin.');
+    });
+  });
+  document.querySelector('.lang-select-box')?.addEventListener('click', () => {
+    showAppNotification('Arayüz Dili', 'Sunify şu anda tam Türkçe dil paketiyle çalışmaktadır.');
+  });
+
+  // 11. Tıklanabilir Sanatçı İsimleri (Alt oynatıcı, söz ekranı ve şarkı satırları)
+  async function openArtistByName(rawArtistName) {
+    const cleaned = String(rawArtistName || '')
+      .replace(/\s*\(Yükleniyor\.\.\.\)\s*/gi, '')
+      .replace(/^[E]\s+/i, '')
+      .split(/[,&/]|feat\.?|ft\.?/i)[0]
+      .trim();
+    if (!cleaned || cleaned.toLowerCase() === 'sunify' || cleaned.toLowerCase() === 'bir şarkı seç') return;
+    if (lyricsOverlay?.classList.contains('active')) {
+      lyricsOverlay.classList.remove('active');
+      stopLyricsSyncAnimation();
+    }
+    if (viewSettings?.classList.contains('active')) {
+      closeSettingsWindow();
+    }
+    try {
+      const response = await fetch(`${API_BASE}/artists/search?q=${encodeURIComponent(cleaned)}`, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      const data = await response.json();
+      const firstArtist = Array.isArray(data.artists) && data.artists[0];
+      if (firstArtist && firstArtist.id) {
+        await openArtistPage(firstArtist);
+        return;
+      }
+      showAppNotification('Sanatçı bulunamadı', `“${cleaned}” için sanatçı profili bulunamadı.`, true);
+    } catch (err) {
+      showAppNotification('Sanatçı açılamadı', err.message || 'Sanatçı bilgileri alınamadı.', true);
+    }
+  }
+
+  currentArtist?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (currentTrack?.artist) void openArtistByName(currentTrack.artist);
+  });
+  lyricsTrackArtist?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (currentTrack?.artist) void openArtistByName(currentTrack.artist);
+  });
+  document.addEventListener('click', (event) => {
+    const artistNode = event.target.closest('.pl-track-artist, .hm-track-meta span, .hm-cover-artist, .artist-track-subtitle');
+    if (!artistNode) return;
+    const row = artistNode.closest('[data-track-artist]');
+    const artistName = row?.dataset?.trackArtist || artistNode.textContent;
+    if (artistName) {
+      event.stopPropagation();
+      void openArtistByName(artistName);
+    }
+  }, true);
+
+  // 12. Şarkı Sözleri "Sinema / Odak Modu" (C tuşu + Buton) ve Sağ Tıkla Söz Kopyalama
+  const cinemaBtn = document.getElementById('lyricsCinemaModeBtn');
+  function toggleLyricsCinemaMode() {
+    if (!lyricsOverlay) return;
+    const active = lyricsOverlay.classList.toggle('cinema-mode');
+    if (cinemaBtn) {
+      cinemaBtn.setAttribute('aria-pressed', String(active));
+      const span = cinemaBtn.querySelector('span');
+      if (span) span.textContent = active ? 'Normal' : 'Odak';
+    }
+    showAppNotification(active ? 'Sinema Modu Açık' : 'Sinema Modu Kapalı', active ? 'Üst araçlar gizlendi (Çıkmak için C tuşuna basın).' : 'Standart şarkı sözü görünümüne dönüldü.');
+  }
+  cinemaBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleLyricsCinemaMode();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return;
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable) return;
+    if ((event.key === 'c' || event.key === 'C') && lyricsOverlay?.classList.contains('active')) {
+      event.preventDefault();
+      toggleLyricsCinemaMode();
+    }
+  });
+  lyricsLinesContainer?.addEventListener('contextmenu', async (event) => {
+    const lineEl = event.target.closest('.lyric-line');
+    if (!lineEl) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const text = lineEl.textContent.trim();
+    if (!text) return;
+    const quote = currentTrack?.title
+      ? `“${text}” — ${currentTrack.artist || 'Sunify'}, ${currentTrack.title}`
+      : text;
+    try {
+      await navigator.clipboard.writeText(quote);
+      showAppNotification('Şarkı Sözü Kopyalandı', quote);
+    } catch {
+      showAppNotification('Şarkı Sözü', quote);
+    }
+  });
+
+  // 13. Şarkı Satırları ve Kartları İçin Özel Cam Sağ Tık Menüsü (Context Menu)
+  let trackContextMenuEl = null;
+  function closeTrackContextMenu() {
+    if (trackContextMenuEl) {
+      trackContextMenuEl.remove();
+      trackContextMenuEl = null;
+    }
+  }
+
+  function resolveTrackFromElement(el) {
+    if (!el) return null;
+    if (el.__sunifyTrack && el.__sunifyTrack.title) {
+      return {
+        track: el.__sunifyTrack,
+        list: Array.isArray(el.__sunifyTrackList) ? el.__sunifyTrackList : [el.__sunifyTrack],
+        index: Number.isFinite(el.__sunifyTrackIndex) ? el.__sunifyTrackIndex : 0,
+      };
+    }
+    const title = el.dataset?.trackTitle || el.querySelector('.pl-track-name, .hm-track-meta strong, .artist-track-title, .spotlight-title, strong')?.textContent?.trim();
+    const artist = el.dataset?.trackArtist || el.querySelector('.pl-track-artist, .hm-track-meta span, .hm-cover-artist, .artist-track-subtitle, .spotlight-artist, span')?.textContent?.trim();
+    const thumb = el.querySelector('img')?.src || PLACEHOLDER_COVER;
+    if (!title) return null;
+    const fallbackTrack = {
+      title,
+      artist: artist || 'Bilinmeyen Sanatçı',
+      thumbnail: thumb,
+      query: `${artist || ''} ${title}`.trim(),
+    };
+    return { track: fallbackTrack, list: [fallbackTrack], index: 0 };
+  }
+
+  function openTrackContextMenu(track, clientX, clientY, list = [track], index = 0) {
+    if (!track || !track.title) return;
+    closeTrackContextMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'sunify-context-menu';
+    menu.setAttribute('role', 'menu');
+
+    const header = document.createElement('div');
+    header.className = 'sunify-ctx-header';
+    const thumb = document.createElement('img');
+    thumb.src = track.thumbnail || PLACEHOLDER_COVER;
+    thumb.alt = '';
+    const meta = document.createElement('div');
+    meta.className = 'sunify-ctx-header-meta';
+    const titleEl = document.createElement('strong');
+    titleEl.textContent = track.title;
+    const artistEl = document.createElement('span');
+    artistEl.textContent = track.artist || 'Sunify';
+    meta.append(titleEl, artistEl);
+    header.append(thumb, meta);
+    menu.appendChild(header);
+
+    const addItem = (icon, label, onClick) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sunify-ctx-item';
+      btn.setAttribute('role', 'menuitem');
+      btn.innerHTML = `<i class="fa-solid ${icon}" aria-hidden="true"></i><span></span>`;
+      btn.querySelector('span').textContent = label;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeTrackContextMenu();
+        onClick();
+      });
+      menu.appendChild(btn);
+      return btn;
+    };
+    const addDivider = () => {
+      const div = document.createElement('div');
+      div.className = 'sunify-ctx-divider';
+      menu.appendChild(div);
+    };
+
+    addItem('fa-play', 'Şimdi Çal', () => {
+      playSelectedTrack(track, list.length ? list : [track], index >= 0 ? index : 0);
+    });
+
+    addItem('fa-forward-step', 'Sıradaki Olarak Çal', () => {
+      if (!currentPlaylist.length) {
+        playSelectedTrack(track, [track], 0);
+        return;
+      }
+      const insertAt = Math.max(0, currentIndex + 1);
+      currentPlaylist.splice(insertAt, 0, track);
+      renderQueueDrawer();
+      showAppNotification('Sıradaki Şarkı', `“${track.title}” bundan hemen sonra çalacak.`);
+    });
+
+    addItem('fa-list-ul', 'Çalma Sırasına Ekle', () => {
+      if (!currentPlaylist.length) {
+        currentPlaylist = [track];
+        currentIndex = 0;
+      } else {
+        currentPlaylist.push(track);
+      }
+      renderQueueDrawer();
+      showAppNotification('Sıraya Eklendi', `“${track.title}” çalma sırasının sonuna eklendi.`);
+    });
+
+    addDivider();
+
+    const isLiked = likedTracks.some((t) => normalizeTrackText(t.title) === normalizeTrackText(track.title));
+    addItem(isLiked ? 'fa-heart-crack' : 'fa-heart', isLiked ? 'Beğenilenlerden Çıkar' : 'Beğenilenlere Ekle', () => {
+      const existingIdx = likedTracks.findIndex((t) => normalizeTrackText(t.title) === normalizeTrackText(track.title));
+      if (existingIdx >= 0) {
+        likedTracks.splice(existingIdx, 1);
+        showAppNotification('Beğenilenler', `“${track.title}” beğenilenlerden çıkarıldı.`);
+      } else {
+        likedTracks.push(track);
+        showAppNotification('Beğenilenler', `“${track.title}” beğenilen şarkılara eklendi.`);
+      }
+      const likedPl = INITIAL_LIBRARY_ITEMS.find((i) => i.id === 'lib_1');
+      if (likedPl) likedPl.tracks = likedTracks;
+      writeAccountJson('sunify_liked_tracks', likedTracks);
+      updateLikeButtonUI();
+      renderLibraryItems();
+    });
+
+    if (customPlaylists.length > 0) {
+      const plContainer = document.createElement('div');
+      plContainer.className = 'sunify-ctx-playlists';
+      plContainer.hidden = true;
+      const plTrigger = document.createElement('button');
+      plTrigger.type = 'button';
+      plTrigger.className = 'sunify-ctx-item';
+      plTrigger.innerHTML = '<i class="fa-solid fa-folder-plus" aria-hidden="true"></i><span>Çalma Listesine Ekle ▾</span>';
+      plTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        plContainer.hidden = !plContainer.hidden;
+      });
+      customPlaylists.forEach((pl) => {
+        const plBtn = document.createElement('button');
+        plBtn.type = 'button';
+        plBtn.className = 'sunify-ctx-item';
+        plBtn.innerHTML = '<i class="fa-solid fa-music" aria-hidden="true"></i><span></span>';
+        plBtn.querySelector('span').textContent = pl.name || 'Çalma Listesi';
+        plBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeTrackContextMenu();
+          if (!Array.isArray(pl.tracks)) pl.tracks = [];
+          pl.tracks.push({ ...track });
+          writeAccountJson('sunify_custom_playlists', customPlaylists);
+          renderLibraryItems();
+          showAppNotification('Listeye Eklendi', `“${track.title}” → ${pl.name}`);
+        });
+        plContainer.appendChild(plBtn);
+      });
+      menu.append(plTrigger, plContainer);
+    }
+
+    addItem('fa-download', 'Şarkıyı İndir', () => {
+      enqueueTrackDownload(track);
+    });
+
+    if (track.artist) {
+      addItem('fa-user-astronaut', 'Sanatçıya Git', () => {
+        void openArtistByName(track.artist);
+      });
+    }
+
+    addDivider();
+
+    addItem('fa-link', 'Şarkı Bağlantısını Kopyala', async () => {
+      const videoId = getTrackYouTubeVideoId(track);
+      const shareText = videoId
+        ? `https://music.youtube.com/watch?v=${videoId}`
+        : `${track.artist || ''} - ${track.title}`.trim();
+      try {
+        await navigator.clipboard.writeText(shareText);
+        showAppNotification('Kopyalandı', shareText);
+      } catch {
+        showAppNotification('Paylaş', shareText);
+      }
+    });
+
+    document.body.appendChild(menu);
+    trackContextMenuEl = menu;
+
+    const rect = menu.getBoundingClientRect();
+    const left = Math.max(8, Math.min(window.innerWidth - rect.width - 8, clientX));
+    const top = Math.max(8, Math.min(window.innerHeight - rect.height - 8, clientY));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
+  window.sunifyOpenTrackContextMenu = openTrackContextMenu;
+
+  document.addEventListener('contextmenu', (event) => {
+    const trackEl = event.target.closest(
+      '.pl-track-row, .hm-track, .hm-cover, .artist-track-row, .queue-track-row, .playlist-recommendation-card, .spotlight-item:not(.spotlight-artist-result):not(.spotlight-playlist-result)'
+    );
+    if (!trackEl) {
+      closeTrackContextMenu();
+      return;
+    }
+    const resolved = resolveTrackFromElement(trackEl);
+    if (!resolved) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openTrackContextMenu(resolved.track, event.clientX, event.clientY, resolved.list, resolved.index);
+  });
+
+  document.addEventListener('pointerdown', (event) => {
+    if (trackContextMenuEl && !trackContextMenuEl.contains(event.target)) {
+      closeTrackContextMenu();
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && trackContextMenuEl) closeTrackContextMenu();
+  });
 })();

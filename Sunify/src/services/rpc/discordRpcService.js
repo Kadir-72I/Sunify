@@ -86,8 +86,13 @@ function formatClock(seconds) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function updateDiscordPresence(track, position = 0, duration = 0, isPlaying = true) {
+function updateDiscordPresence(track, position = 0, duration = 0, isPlaying = true, settings = {}) {
   if (!track || !track.title) return;
+  const cfg = settings && typeof settings === 'object' ? settings : {};
+  if (cfg.enabled === false || (!isPlaying && cfg.showPaused === false)) {
+    clearDiscordPresence();
+    return;
+  }
 
   const cleaned = cleanTrackMetadata(track.title || '', track.artist || '');
   let title = (cleaned.title || track.title || 'Sunify').replace(/\s*\((?:offiziell[^)]*|official[^)]*|hd|4k)\)/gi, '').trim();
@@ -95,9 +100,24 @@ function updateDiscordPresence(track, position = 0, duration = 0, isPlaying = tr
   if (title.length < 2) title += ' ';
   if (artist.length < 2) artist += ' ';
 
+  const format = ['artist', 'title', 'both'].includes(cfg.format) ? cfg.format : 'artist';
+  const details = (
+    format === 'both'
+      ? `${title} — ${artist}`
+      : format === 'title'
+        ? `🎵 ${title}`
+        : title
+  ).substring(0, 127);
+  const activeState = format === 'both'
+    ? 'Sunify Desktop • Hi-Fi Audio'
+    : format === 'title'
+      ? `${artist} • Sunify`
+      : `sanatçı: ${artist}`;
+
   const nowMs = Date.now();
-  const startTimestamp = isPlaying ? Math.floor(nowMs - position * 1000) : undefined;
-  const endTimestamp = isPlaying && duration > 0 ? Math.floor(startTimestamp + duration * 1000) : undefined;
+  const showTimeline = cfg.timeline !== false;
+  const startTimestamp = isPlaying && showTimeline ? Math.floor(nowMs - position * 1000) : undefined;
+  const endTimestamp = isPlaying && showTimeline && duration > 0 ? Math.floor(startTimestamp + duration * 1000) : undefined;
 
   const coverUrl = track.thumbnail && track.thumbnail.startsWith('http')
     ? track.thumbnail
@@ -109,22 +129,32 @@ function updateDiscordPresence(track, position = 0, duration = 0, isPlaying = tr
     ? `https://music.youtube.com/watch?v=${videoId}`
     : `https://music.youtube.com/search?q=${encodeURIComponent(`${artist} ${title}`.trim())}`;
 
+  const buttons = [];
+  if (cfg.buttonListen !== false) {
+    buttons.push({ label: "🎵 Sunify'da Dinle", url: listenUrl });
+  }
+  if (cfg.buttonDownload !== false) {
+    buttons.push({ label: "✨ Sunify'ı İndir", url: 'https://github.com/Kadir-72I/Sunify/releases/latest' });
+  }
+
   const durationBadge = duration > 0 ? ` [${formatClock(position)} / ${formatClock(duration)}]` : '';
+  const assets = {};
+  if (cfg.artwork !== false) {
+    assets.large_image = coverUrl;
+    assets.large_text = `${title} — ${artist}${durationBadge}`.substring(0, 127);
+  }
+  if (cfg.artistBadge !== false) {
+    assets.small_image = 'sunify_logo';
+    assets.small_text = isPlaying ? '▶ Sunify Desktop • Şimdi Çalıyor' : '⏸ Duraklatıldı';
+  }
+
   const activity = {
     type: 2,
-    details: title.substring(0, 127),
-    state: (isPlaying ? `sanatçı: ${artist}` : `⏸ Duraklatıldı · ${artist}`).substring(0, 127),
+    details,
+    state: (isPlaying ? activeState : `⏸ Duraklatıldı · ${artist}`).substring(0, 127),
     timestamps: isPlaying && endTimestamp ? { start: startTimestamp, end: endTimestamp } : undefined,
-    assets: {
-      large_image: coverUrl,
-      large_text: `${title} — ${artist}${durationBadge}`.substring(0, 127),
-      small_image: 'sunify_logo',
-      small_text: isPlaying ? '▶ Sunify Desktop • Şimdi Çalıyor' : '⏸ Duraklatıldı',
-    },
-    buttons: [
-      { label: "🎵 Sunify'da Dinle", url: listenUrl },
-      { label: "✨ Sunify'ı İndir", url: 'https://github.com/Kadir-72I/Sunify/releases/latest' },
-    ],
+    ...(Object.keys(assets).length ? { assets } : {}),
+    ...(buttons.length ? { buttons } : {}),
   };
 
   currentActivity = activity;
@@ -142,7 +172,5 @@ function clearDiscordPresence() {
     sendActivity(null);
   }
 }
-
-connectToDiscord();
 
 module.exports = { updateDiscordPresence, clearDiscordPresence };

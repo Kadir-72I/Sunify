@@ -197,12 +197,18 @@ function updatePresence(data) {
   // Varsayılan ('artist' veya 'title'): Üstte kalın Şarkı Adı, altta "by Sanatçı" (Spotify düzeni)
   const format = ['artist', 'title', 'both'].includes(settings.format) ? settings.format : 'artist';
   const details = padRpcField(
-    format === 'both' ? `🎵 ${title} — ${artist}` : title,
+    format === 'both'
+      ? `${title} — ${artist}`
+      : format === 'title'
+        ? `🎵 ${title}`
+        : title,
     'Sunify'
   );
   const baseState = format === 'both'
     ? 'Sunify Desktop • Hi-Fi Audio'
-    : `sanatçı: ${artist}`;
+    : format === 'title'
+      ? `${artist} • Sunify`
+      : `sanatçı: ${artist}`;
 
   const safePosition = Math.max(0, Number(position) || 0);
   const safeDuration = Math.max(0, Number(duration) || 0);

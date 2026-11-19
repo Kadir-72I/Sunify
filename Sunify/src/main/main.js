@@ -86,6 +86,7 @@ ipcMain.on('secure-auth-store:delete', (event, key) => {
 });
 let miniPlayerWindow;
 let miniPlayerDismissed = false;
+let miniPlayerForcedVisible = false;
 let miniPlayerDestroyTimer = null;
 let appTray = null;
 let isQuittingApp = false;
@@ -204,9 +205,11 @@ function updateSystemTrayMenu() {
       click: () => {
         if (miniPlayerWindow && !miniPlayerWindow.isDestroyed() && miniPlayerWindow.isVisible()) {
           miniPlayerDismissed = true;
+          miniPlayerForcedVisible = false;
           miniPlayerWindow.hide();
         } else {
           miniPlayerDismissed = false;
+          miniPlayerForcedVisible = true;
           showMiniPlayer(true);
         }
       },
@@ -478,13 +481,14 @@ function createWindow() {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
     mainWindow.webContents.send('window-minimized-state', false);
     miniPlayerDismissed = false;
+    if (miniPlayerForcedVisible) return;
     if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
       miniPlayerWindow.hide();
       // Ana pencere açıkken 2. renderer sürecini (mini-player) ~60 MB RAM tutmaması için 3 sn sonra kapat
       if (miniPlayerDestroyTimer) clearTimeout(miniPlayerDestroyTimer);
       miniPlayerDestroyTimer = setTimeout(() => {
         miniPlayerDestroyTimer = null;
-        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && miniPlayerWindow && !miniPlayerWindow.isDestroyed() && !miniPlayerWindow.isVisible()) {
+        if (!miniPlayerForcedVisible && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && miniPlayerWindow && !miniPlayerWindow.isDestroyed() && !miniPlayerWindow.isVisible()) {
           miniPlayerWindow.destroy();
           miniPlayerWindow = null;
           trimProcessMemory();
@@ -546,14 +550,37 @@ ipcMain.on('mini-player-settings', (event, settings) => {
   miniPlayerSettings.size = ['small', 'medium', 'large'].includes(settings.size)
     ? settings.size : 'medium';
   miniPlayerSettings.opacity = Math.max(0.35, Math.min(1, Number(settings.opacity) || 0.88));
-  if ((!miniPlayerSettings.enabled || !miniPlayerSettings.onMinimize) && miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+  if (!miniPlayerSettings.enabled && miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+    miniPlayerForcedVisible = false;
+    miniPlayerWindow.hide();
+  } else if (!miniPlayerSettings.onMinimize && !miniPlayerForcedVisible && miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
     miniPlayerWindow.hide();
   } else {
     applyMiniPlayerSettings();
-    if (miniPlayerSettings.enabled && miniPlayerSettings.onMinimize && mainWindow?.isMinimized()) {
+    if (miniPlayerSettings.enabled && (miniPlayerForcedVisible || (miniPlayerSettings.onMinimize && mainWindow?.isMinimized()))) {
       miniPlayerDismissed = false;
-      showMiniPlayer();
+      showMiniPlayer(miniPlayerForcedVisible);
     }
+  }
+});
+
+ipcMain.on('mini-player-toggle', (event, forceShow) => {
+  if (!fromAppWindow(event) || !miniPlayerSettings.enabled) return;
+  const isCurrentlyVisible = Boolean(miniPlayerWindow && !miniPlayerWindow.isDestroyed() && miniPlayerWindow.isVisible());
+  if (forceShow === true) {
+    miniPlayerDismissed = false;
+    miniPlayerForcedVisible = true;
+    showMiniPlayer(true);
+    return;
+  }
+  if (isCurrentlyVisible) {
+    miniPlayerDismissed = true;
+    miniPlayerForcedVisible = false;
+    miniPlayerWindow.hide();
+  } else {
+    miniPlayerDismissed = false;
+    miniPlayerForcedVisible = true;
+    showMiniPlayer(true);
   }
 });
 
@@ -608,6 +635,7 @@ ipcMain.on('mini-player-action', (event, action, value) => {
   if (!miniPlayerWindow || event.sender !== miniPlayerWindow.webContents) return;
   if (action === 'close') {
     miniPlayerDismissed = true;
+    miniPlayerForcedVisible = false;
     miniPlayerWindow.hide();
     return;
   }
@@ -710,9 +738,11 @@ app.whenReady().then(() => {
     if (miniPlayerWindow && !miniPlayerWindow.isDestroyed() && miniPlayerWindow.isVisible()) {
       miniPlayerWindow.hide();
       miniPlayerDismissed = true;
+      miniPlayerForcedVisible = false;
       return;
     }
     miniPlayerDismissed = false;
+    miniPlayerForcedVisible = true;
     showMiniPlayer(true);
   });
   initRPC();

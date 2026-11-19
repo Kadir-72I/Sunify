@@ -450,8 +450,8 @@
                   </div>
 
                   <div class="setting-item-column">
-                    <span class="item-title">Tema</span>
-                    <p class="item-sub">Uygulama görünümü koyu temaya sabitlendi.</p>
+                    <span class="item-title">Tema & Vurgu Rengi</span>
+                    <p class="item-sub">Koyu cam temasını albüm kapağına göre dinamik veya sabit bir vurgu tonuyla özelleştirin.</p>
 
                     <div class="theme-options-grid">
                       <div class="theme-card active" data-theme="dark" aria-current="true">
@@ -471,6 +471,15 @@
                         </div>
                       </div>
 
+                    </div>
+
+                    <div class="pill-group" id="settingAccentTheme" style="margin-top: 12px; flex-wrap: wrap">
+                      <button class="pill-btn active" type="button" data-accent="auto">🎨 Otomatik (Kapak)</button>
+                      <button class="pill-btn" type="button" data-accent="amethyst">💜 Gece Moru</button>
+                      <button class="pill-btn" type="button" data-accent="emerald">💚 Zümrüt</button>
+                      <button class="pill-btn" type="button" data-accent="amber">💛 Altın</button>
+                      <button class="pill-btn" type="button" data-accent="ocean">🩵 Okyanus</button>
+                      <button class="pill-btn" type="button" data-accent="crimson">❤️ Kızıl</button>
                     </div>
                   </div>
 
@@ -677,12 +686,17 @@
 
                   <div class="setting-item-row">
                     <div>
-                      <span class="item-title">Genel kısayol</span>
+                      <span class="item-title">Genel kısayol ve canlı önizleme</span>
                       <p class="item-sub">
-                        Masaüstü katmanını sistemdeki her uygulamadan aç veya kapat.
+                        Masaüstü katmanını sistemdeki her uygulamadan veya doğrudan buradan açıp test et.
                       </p>
                     </div>
-                    <span class="shortcut-badge">Alt + Shift + O</span>
+                    <div style="display: flex; align-items: center; gap: 10px">
+                      <span class="shortcut-badge">Alt + Shift + O</span>
+                      <button class="tool-btn" type="button" id="btnToggleOverlayNow" style="padding: 6px 14px; font-size: 12px">
+                        <i class="fa-solid fa-up-right-from-square" style="margin-right: 6px"></i>Şimdi Göster / Gizle
+                      </button>
+                    </div>
                   </div>
 
                   <div class="setting-item-row">
@@ -728,7 +742,7 @@
                 >
                   <div class="pill-group" id="shortcutCategoryGroup">
                     <button class="pill-btn active" data-cat="main">
-                      Ana Uygulama <span style="opacity: 0.6; margin-left: 4px">11</span>
+                      Ana Uygulama <span style="opacity: 0.6; margin-left: 4px">12</span>
                     </button>
                     <button class="pill-btn" data-cat="global">
                       Sistem geneli <span style="opacity: 0.6; margin-left: 4px">1</span>
@@ -866,6 +880,16 @@
                       </div>
                     </div>
                     <span class="shortcut-badge">F</span>
+                  </div>
+                  <div class="shortcut-card-item">
+                    <div class="shortcut-info">
+                      <i class="fa-solid fa-film shortcut-icon"></i>
+                      <div>
+                        <div class="shortcut-title">Sinema / Odak modu (Şarkı sözleri)</div>
+                        <div class="shortcut-context">Ana Uygulama</div>
+                      </div>
+                    </div>
+                    <span class="shortcut-badge">C</span>
                   </div>
                   <div class="shortcut-card-item" data-shortcut-cat="global">
                     <div class="shortcut-info">
@@ -1591,6 +1615,7 @@
           </div>
           <div class="progress-bar-container player-progress" id="progressBarContainer" role="slider" aria-label="Şarkı ilerleme çubuğu" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
             <div class="progress-bar-fill" id="progressBarFill"></div>
+            <span class="player-seek-tooltip" id="playerSeekTooltip" aria-hidden="true">0:00 / 0:00</span>
           </div>
         </div>
         <span id="currentTimeLabel" style="display: none">0:00</span>
@@ -1637,6 +1662,7 @@
               <button class="offset-reset-btn" id="offsetResetBtn" type="button">Sıfırla (0.0s)</button>
             </div>
           </div>
+          <button class="lyrics-offset-btn" id="lyricsCinemaModeBtn" type="button" title="Sinema / Odak Modu (C)" aria-label="Sinema Modu"><i class="fa-solid fa-film" aria-hidden="true"></i><span>Odak</span></button>
           <button class="close-overlay-btn" id="closeLyricsBtn" type="button" title="Kapat" aria-label="Şarkı sözlerini kapat"><i class="fa-solid fa-xmark"></i></button>
         </div>
       </header>

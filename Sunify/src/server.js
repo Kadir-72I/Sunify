@@ -284,11 +284,11 @@ app.use('/api', (req, res, next) => {
 
 // Discord RPC Güncelleme Uç Noktası
 app.post('/api/discord-rpc', (req, res) => {
-  const { track, position, duration, isPlaying } = req.body;
+  const { track, position, duration, isPlaying, settings } = req.body;
   if (!track) {
     clearDiscordPresence();
   } else {
-    updateDiscordPresence(track, position, duration, isPlaying);
+    updateDiscordPresence(track, position, duration, isPlaying, settings);
   }
   res.json({ success: true });
 });

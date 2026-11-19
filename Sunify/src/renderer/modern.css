@@ -906,3 +906,239 @@ body.perf-low-power *::after {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
+
+/* 1. Alt Oynatıcı İlerleme Çubuğu Hover Süre Baloncuğu */
+.player-floating-capsule .player-progress {
+  overflow: visible !important;
+}
+.player-seek-tooltip {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: var(--seek-x, 50%);
+  transform: translateX(-50%) translateY(4px) scale(0.95);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: rgba(16, 14, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.48), 0 0 12px var(--accent-soft, rgba(167, 139, 250, 0.25));
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  z-index: 40;
+}
+.player-floating-capsule:hover .player-seek-tooltip.is-visible,
+body.is-seeking .player-seek-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* 2. Şarkı Kartları ve Satırları İçin Özel Cam Sağ Tık Menüsü */
+.sunify-context-menu {
+  position: fixed;
+  z-index: 12000;
+  min-width: 224px;
+  max-width: 268px;
+  padding: 6px;
+  border-radius: 16px;
+  background: linear-gradient(165deg, rgba(24, 20, 36, 0.96), rgba(14, 12, 22, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(22px) saturate(1.4);
+  color: #fff;
+  user-select: none;
+  animation: sunifyCtxPop 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes sunifyCtxPop {
+  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.sunify-ctx-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 9px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sunify-ctx-header img {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.sunify-ctx-header-meta {
+  min-width: 0;
+  flex: 1;
+}
+.sunify-ctx-header-meta strong {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sunify-ctx-header-meta span {
+  display: block;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sunify-ctx-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.sunify-ctx-item i {
+  width: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--accent-color, #a78bfa);
+}
+.sunify-ctx-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.sunify-ctx-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.sunify-ctx-playlists {
+  max-height: 130px;
+  overflow-y: auto;
+  margin: 2px 0 4px 12px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+/* 3. Tıklanabilir Sanatçı İsimleri */
+#currentArtist,
+#lyricsTrackArtist,
+.pl-track-artist,
+.hm-track-meta span,
+.hm-cover-artist,
+.artist-track-subtitle {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+#currentArtist:hover,
+#lyricsTrackArtist:hover,
+.pl-track-artist:hover,
+.hm-track-meta span:hover,
+.hm-cover-artist:hover,
+.artist-track-subtitle:hover {
+  color: #fff !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* 4. Çalan Şarkı Satırında Canlı Mini Ekolayzır Dalga Göstergesi */
+@keyframes sunifyEqWave {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.hm-track.is-current-track .hm-track-rank,
+.artist-track-row.is-current-track .artist-track-rank {
+  position: relative;
+  color: transparent !important;
+}
+.hm-track.is-current-track .hm-track-rank::after,
+.artist-track-row.is-current-track .artist-track-rank::after,
+.pl-track-row.is-current-track .pl-track-name::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 7px;
+  vertical-align: -1px;
+  background:
+    linear-gradient(var(--accent-color, #a78bfa), var(--accent-color, #a78bfa)) 0 100% / 3px 65% no-repeat,
+    linear-gradient(var(--accent-color, #a78bfa), var(--accent-color, #a78bfa)) 4.5px 100% / 3px 100% no-repeat,
+    linear-gradient(var(--accent-color, #a78bfa), var(--accent-color, #a78bfa)) 9px 100% / 3px 45% no-repeat;
+  transform-origin: bottom center;
+}
+.hm-track.is-current-track .hm-track-rank::after,
+.artist-track-row.is-current-track .artist-track-rank::after {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+body.is-playing .hm-track.is-current-track .hm-track-rank::after,
+body.is-playing .artist-track-row.is-current-track .artist-track-rank::after,
+body.is-playing .pl-track-row.is-current-track .pl-track-name::before {
+  animation: sunifyEqWave 0.75s ease-in-out infinite;
+}
+
+/* 5. Çalma Listesi Sürükle-Bırak (Drag & Drop) Sıralama */
+.pl-track-row[draggable='true'] {
+  cursor: grab;
+}
+.pl-track-row.is-dragging {
+  opacity: 0.45;
+  transform: scale(0.985);
+}
+.pl-track-row.drag-over {
+  box-shadow: inset 0 2px 0 var(--accent-color, #a78bfa), 0 0 16px rgba(167, 139, 250, 0.22) !important;
+  background: rgba(167, 139, 250, 0.12) !important;
+}
+
+/* 6. Şarkı Sözleri Tam Ekran Sinema / Odak Modu */
+#lyricsOverlay.cinema-mode .lyrics-topbar .lyrics-view-title,
+#lyricsOverlay.cinema-mode .lyrics-topbar .lyrics-source-selector-wrap,
+#lyricsOverlay.cinema-mode .lyrics-topbar .lyrics-offset-wrap,
+#lyricsOverlay.cinema-mode .lyrics-tools-bar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+#lyricsOverlay.cinema-mode #lyricsCinemaModeBtn {
+  background: var(--accent-color, #a78bfa);
+  color: #120d1d;
+  font-weight: 800;
+}
+#lyricsOverlay.cinema-mode .lyrics-content-wrap {
+  padding-top: 12px;
+}
+.lyric-line {
+  position: relative;
+}
+.lyric-line:hover::after {
+  content: 'Sağ tık: Sözü kopyala';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(0, 0, 0, 0.38);
+  opacity: 0.85;
+  pointer-events: none;
+}
