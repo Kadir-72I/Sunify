@@ -1215,9 +1215,10 @@
                       </p>
                     </div>
                     <div class="pill-group" id="cacheLimitGroup">
+                      <button class="pill-btn" data-limit="0.25">256 MB</button>
+                      <button class="pill-btn active" data-limit="0.5">512 MB</button>
                       <button class="pill-btn" data-limit="1">1 GB</button>
-                      <button class="pill-btn active" data-limit="3">3 GB</button>
-                      <button class="pill-btn" data-limit="10">10 GB</button>
+                      <button class="pill-btn" data-limit="3">3 GB</button>
                       <button class="pill-btn" data-limit="0">Sınır yok</button>
                     </div>
                   </div>
@@ -1228,7 +1229,7 @@
                       <p class="item-sub">Kapalıyken önbellek listesi kitaplıkta gösterilmez.</p>
                     </div>
                     <label class="toggle-switch">
-                      <input type="checkbox" id="settingShowCachedInLibrary" />
+                      <input type="checkbox" id="settingShowCachedInLibrary" checked />
                       <span class="toggle-slider"></span>
                     </label>
                   </div>

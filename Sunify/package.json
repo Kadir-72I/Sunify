@@ -94,14 +94,11 @@
         "to": "sunify-tools/yt-dlp"
       },
       {
-        "from": "build/runtime/deno.exe",
-        "to": "sunify-tools/deno.exe"
-      },
-      {
         "from": "build/runtime/THIRD-PARTY-NOTICES.txt",
         "to": "sunify-tools/THIRD-PARTY-NOTICES.txt"
       }
     ],
+    "afterPack": "scripts/after-pack.js",
     "compression": "maximum",
     "electronLanguages": [
       "tr",

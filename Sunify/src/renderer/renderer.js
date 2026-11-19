@@ -2945,7 +2945,13 @@ async function loadCachedAudioTracks() {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Ses önbelleği okunamadı.');
-    cachedItem.tracks = localStorage.getItem('sunify_setting_show_cached') === 'true' && Array.isArray(data.tracks) ? data.tracks : [];
+    const showCached = localStorage.getItem('sunify_setting_show_cached') !== 'false';
+    cachedItem.tracks = showCached && Array.isArray(data.tracks) ? data.tracks : [];
+    if (viewPlaylistDetail.classList.contains('active') && activePlaylistData?.id === 'lib_cached') {
+      activePlaylistData.tracks = cachedItem.tracks;
+      if (plHeroStats) plHeroStats.innerHTML = `<i class="fa-solid fa-music"></i> ${cachedItem.tracks.length} parça • Dinlemeye hazır`;
+      renderPlaylistTracks(cachedItem.tracks);
+    }
   } catch (error) {
     console.warn('Ses önbelleği okunamadı:', error.message);
     cachedItem.tracks = [];
@@ -3301,29 +3307,20 @@ let playSessionId = 0; // Şarkı geçiş çakışmalarını önleyen oturum bel
 let isResolvingPlayback = false;
 let upcomingPrefetch = null;
 let activeAudioFallback = null;
-const audioPrefetchRequests = new Map();
-const audioPrefetchQueue = [];
 const preparedAudioTrackMetadata = new Map();
-let audioPrefetchWorkers = 0;
-const MAX_CLIENT_PREFETCH_QUEUE = 40;
 let cachedAudioMetadataRefreshTimer = null;
 
-function bindTrackAudioPrefetch(element, track) {
-  let timer = null;
-  element.addEventListener('pointerenter', () => {
-    timer = setTimeout(() => prefetchTrackAudio(track), 180);
-  }, { passive: true });
-  element.addEventListener('pointerleave', () => {
-    clearTimeout(timer);
-    timer = null;
-  }, { passive: true });
+function bindTrackAudioPrefetch() {
+  // Fareyle şarkıların üzerinden geçerken otomatik tam ses dosyası indirmesi
+  // yapılmaz (disk ve RAM şişmesini önler). Yalnızca çalan şarkı ve sıradaki
+  // tek şarkı (maybePrefetchNextTrack) indirilir.
 }
 
 function prefetchTrackAudio(track) {
   const videoId = getTrackYouTubeVideoId(track);
   const query = String(track?.query || `${track?.artist || ''} ${track?.title || ''}`).trim();
   const target = videoId || query;
-  if (!target) return;
+  if (!target) return Promise.resolve();
   preparedAudioTrackMetadata.set(target, {
     videoId,
     id: track.id || '',
@@ -3333,49 +3330,15 @@ function prefetchTrackAudio(track) {
     thumbnail: track.thumbnail || '',
     duration: Number(track.duration) || 0,
   });
-  if (preparedAudioTrackMetadata.size > 800) preparedAudioTrackMetadata.delete(preparedAudioTrackMetadata.keys().next().value);
-  if (audioPrefetchRequests.has(target)) return audioPrefetchRequests.get(target);
-  if (audioPrefetchRequests.size >= MAX_CLIENT_PREFETCH_QUEUE) return Promise.resolve();
-  let resolveRequest;
-  const request = new Promise((resolve) => { resolveRequest = resolve; });
-  audioPrefetchRequests.set(target, request);
-  audioPrefetchQueue.push({ target, videoId, query, track, resolve: resolveRequest });
-  pumpAudioPrefetchQueue();
-  return request;
+  if (preparedAudioTrackMetadata.size > 200) preparedAudioTrackMetadata.delete(preparedAudioTrackMetadata.keys().next().value);
+  return Promise.resolve();
 }
 
 function prefetchTrackBatch(tracks, limit = 5) {
   for (const track of (Array.isArray(tracks) ? tracks : []).slice(0, limit)) prefetchTrackAudio(track);
-  if (localStorage.getItem('sunify_setting_show_cached') === 'true') {
+  if (localStorage.getItem('sunify_setting_show_cached') !== 'false') {
     clearTimeout(cachedAudioMetadataRefreshTimer);
     cachedAudioMetadataRefreshTimer = setTimeout(() => { void loadCachedAudioTracks(); }, 1200);
-  }
-}
-
-function pumpAudioPrefetchQueue() {
-  while (audioPrefetchWorkers < 2 && audioPrefetchQueue.length) {
-    const item = audioPrefetchQueue.shift();
-    audioPrefetchWorkers += 1;
-    fetch(`${API_BASE}/audio-prefetch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        videoId: item.videoId,
-        query: item.query,
-        title: item.track?.title || '',
-        artist: item.track?.artist || '',
-        thumbnail: item.track?.thumbnail || '',
-        duration: item.track?.duration || 0,
-        trackId: item.track?.id || '',
-        priority: 'low',
-      }),
-    }).catch((error) => console.debug('Ses ön hazırlığı başlatılamadı:', error.message))
-      .finally(() => {
-        audioPrefetchRequests.delete(item.target);
-        item.resolve();
-        audioPrefetchWorkers = Math.max(0, audioPrefetchWorkers - 1);
-        pumpAudioPrefetchQueue();
-      });
   }
 }
 
@@ -4824,10 +4787,18 @@ function updatePlayPauseIcons(playing) {
 }
 
 function syncDiscordRPC(track, position, duration, isPlaying) {
+  const videoId = getTrackYouTubeVideoId(track);
+  const youtubeUrl = videoId
+    ? `https://www.youtube.com/watch?v=${videoId}`
+    : track?.url && /^https?:\/\//i.test(track.url)
+      ? track.url
+      : '';
   // Electron masaüstünde tek yayıncı ana süreçtir. HTTP yedeğini aynı anda
   // çağırmak ikinci bir RPC istemcisi oluşturup etkinlik kartını yarıştırır.
   if (window.sunifyAPI && window.sunifyAPI.updateDiscordPresence) {
     window.sunifyAPI.updateDiscordPresence({
+      id: videoId || track?.id || '',
+      url: youtubeUrl,
       title: track?.title,
       artist: track?.artist,
       thumbnail: track?.thumbnail,
@@ -4843,7 +4814,7 @@ function syncDiscordRPC(track, position, duration, isPlaying) {
   fetch(`${API_BASE}/discord-rpc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ track, position, duration, isPlaying, settings: readDiscordRpcSettings() }),
+    body: JSON.stringify({ track: { ...track, id: videoId || track?.id || '', url: youtubeUrl }, position, duration, isPlaying, settings: readDiscordRpcSettings() }),
   }).catch(() => {});
 }
 
@@ -5339,7 +5310,7 @@ function setupSettingsModal() {
     return allowed.includes(value) ? value : fallback;
   };
   let downloadLimitGB = storedLimit('sunify_setting_download_limit', [0, 2, 5, 20], 5);
-  let cacheLimitGB = storedLimit('sunify_setting_cache_limit', [0, 1, 3, 10], 3);
+  let cacheLimitGB = storedLimit('sunify_setting_cache_limit', [0, 0.25, 0.5, 1, 3], 0.5);
   const formatStorageSize = (bytes) => {
     const value = Math.max(0, Number(bytes) || 0);
     if (value < 1024) return `${Math.round(value)} B`;
@@ -5383,9 +5354,10 @@ function setupSettingsModal() {
       ? 'Sınır yok. Disk alanı bitene kadar indirilebilir.'
       : `En fazla ${downloadLimitGB} GB. Şu an ${formatStorageSize(downloadsBytes)} kullanılıyor.`;
     const cacheDesc = document.getElementById('storageCacheLimitDesc');
+    const cacheLimitLabel = cacheLimitGB > 0 && cacheLimitGB < 1 ? `${Math.round(cacheLimitGB * 1024)} MB` : `${cacheLimitGB} GB`;
     if (cacheDesc) cacheDesc.textContent = cacheLimitGB === 0
-      ? 'Sınır yok. Önbellek dosyaları 7 gün sonra temizlenir.'
-      : `${cacheLimitGB} GB sınır. Alan dolunca en eski önbellek dosyaları kaldırılır.`;
+      ? 'Sınır yok. Önbellek dosyaları 2 gün sonra temizlenir.'
+      : `${cacheLimitLabel} sınır. Alan dolunca en eski önbellek dosyaları kaldırılır.`;
     return stats;
   };
   const applyStorageLimits = async () => {
@@ -5415,7 +5387,7 @@ function setupSettingsModal() {
   }
   const showCachedToggle = document.getElementById('settingShowCachedInLibrary');
   if (showCachedToggle) {
-    showCachedToggle.checked = localStorage.getItem('sunify_setting_show_cached') === 'true';
+    showCachedToggle.checked = localStorage.getItem('sunify_setting_show_cached') !== 'false';
     showCachedToggle.onchange = () => {
       localStorage.setItem('sunify_setting_show_cached', String(showCachedToggle.checked));
       void loadCachedAudioTracks();

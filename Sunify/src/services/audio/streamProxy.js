@@ -18,8 +18,8 @@ const DOWNLOAD_TIMEOUT_MS = 120_000;
 // Start playback after the container's initial header is present; the browser
 // can keep buffering from the growing file while yt-dlp downloads the rest.
 const STREAM_START_BYTES = 4 * 1024;
-const AUDIO_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-let audioCacheMaxBytes = 3 * 1024 * 1024 * 1024;
+const AUDIO_CACHE_TTL_MS = 2 * 24 * 60 * 60 * 1000;
+let audioCacheMaxBytes = Math.round(0.5 * 1024 * 1024 * 1024);
 const FAST_YOUTUBE_EXTRACTOR_ARGS = ['--extractor-args', 'youtube:player_client=default,-tv_samsung'];
 const MAX_BACKGROUND_DOWNLOADS = 1;
 const MAX_QUEUED_BACKGROUND = 2;
@@ -165,9 +165,10 @@ function getBundledRuntimePaths() {
     ? path.join(process.resourcesPath, 'sunify-tools')
     : path.resolve(__dirname, '../../../build/runtime');
   const onedirYtDlp = path.join(root, 'yt-dlp', 'yt-dlp.exe');
+  const denoCandidate = path.join(root, 'deno.exe');
   return {
     ytDlp: fs.existsSync(onedirYtDlp) ? onedirYtDlp : path.join(root, 'yt-dlp.exe'),
-    deno: path.join(root, 'deno.exe'),
+    deno: fs.existsSync(denoCandidate) ? denoCandidate : '',
   };
 }
 
@@ -180,7 +181,7 @@ function runBundledExtractor(executable, denoPath, target, fast = true) {
       // Google Video signs these URLs to the extractor's egress IP. Keep yt-dlp
       // and the Node audio proxy on IPv4 so the signed URL does not return 403.
       '--force-ipv4',
-      '--js-runtimes', `deno:${denoPath}`,
+      ...(denoPath && fs.existsSync(denoPath) ? ['--js-runtimes', `deno:${denoPath}`] : []),
       ...(fast ? FAST_YOUTUBE_EXTRACTOR_ARGS : []),
       target,
     ];
@@ -385,7 +386,8 @@ function runBundledDownload(executable, denoPath, target, outputTemplate, fast =
   const args = [
     '--no-warnings', '--no-playlist', '--no-progress', '--quiet', '--no-part', '--no-write-info-json', '--no-write-thumbnail',
     '--format', 'bestaudio[ext=m4a]/bestaudio', '--socket-timeout', '20', '--force-ipv4',
-    '--output', outputTemplate, '--print', 'after_move:filepath', '--js-runtimes', `deno:${denoPath}`,
+    '--output', outputTemplate, '--print', 'after_move:filepath',
+    ...(denoPath && fs.existsSync(denoPath) ? ['--js-runtimes', `deno:${denoPath}`] : []),
     ...(fast ? FAST_YOUTUBE_EXTRACTOR_ARGS : []), target,
   ];
   return new Promise((resolve, reject) => {
@@ -550,13 +552,17 @@ async function listCachedAudioFiles(knownTracks = []) {
     }
   }
   for (const [query, videoId] of queryIdMap) {
-    const title = query.split(/\s+-\s+/).at(-1) || query;
-    addTrack({ title, query, artist: '', videoId }, `https://www.youtube.com/watch?v=${videoId}`);
-    addTrack({ title, query, artist: '' }, `ytsearch1:${query}`);
+    const cleaned = query.replace(/\s+/g, ' ').trim();
+    const parts = cleaned.split(/\s+[-–—]\s+/);
+    const artist = parts.length >= 2 ? parts[0].trim() : '';
+    const title = parts.length >= 2 ? parts.slice(1).join(' - ').trim() : cleaned;
+    const thumbnail = /^[a-zA-Z0-9_-]{11}$/.test(videoId) ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '';
+    addTrack({ title, query: cleaned, artist, videoId, thumbnail }, `https://www.youtube.com/watch?v=${videoId}`);
+    addTrack({ title, query: cleaned, artist, thumbnail }, `ytsearch1:${query}`);
   }
   const tracks = [];
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.startsWith('sunify-audio-') || /\.(?:part|json)$/.test(entry.name)) continue;
+    if (!entry.isFile() || !entry.name.startsWith('sunify-audio-') || /\.(?:part|json|inprogress)$/i.test(entry.name)) continue;
     const filePath = path.join(directory, entry.name);
     const stat = await fs.promises.stat(filePath).catch(() => null);
     if (!stat?.isFile() || stat.size < 1024 || !(await isSupportedAudioFile(filePath))) continue;
@@ -570,13 +576,19 @@ async function listCachedAudioFiles(knownTracks = []) {
     let metadata;
     try { metadata = JSON.parse(await fs.promises.readFile(`${filePath}.meta.json`, 'utf8')); } catch {}
     const cacheKey = prefix.replace(/^sunify-audio-/, '');
-    metadata ||= metadataByKey.get(cacheKey);
+    if (!metadata || String(metadata.title || '').startsWith('Önbelleğe alınan parça ')) {
+      metadata = metadataByKey.get(cacheKey) || metadata;
+    }
     if (!metadata) metadata = {
       id: '', query: '', title: `Önbelleğe alınan parça ${cacheKey.slice(0, 6).toUpperCase()}`,
       artist: 'Sunify önbelleği', thumbnail: '', duration: 0,
     };
+    const resolvedVid = /^[a-zA-Z0-9_-]{11}$/.test(String(metadata.id || '')) ? String(metadata.id) : '';
+    if (!metadata.thumbnail && resolvedVid) {
+      metadata.thumbnail = `https://i.ytimg.com/vi/${resolvedVid}/hqdefault.jpg`;
+    }
     if (!String(metadata.title || '').trim()) continue;
-    if (!fs.existsSync(`${filePath}.meta.json`) && metadataByKey.has(cacheKey)) {
+    if ((!fs.existsSync(`${filePath}.meta.json`) || metadataByKey.has(cacheKey)) && !String(metadata.title).startsWith('Önbelleğe alınan parça ')) {
       await writeAudioCacheMetadata(filePath, metadata).catch((error) => console.warn('Önbellek bilgisi geri yüklenemedi:', error.message));
     }
     tracks.push({
@@ -805,16 +817,13 @@ async function getDirectAudioUrl(queryOrId, { forceRefresh = false } = {}) {
 async function getRuntimeStatus() {
   const bundled = getBundledRuntimePaths();
   try {
-    const [{ stdout: ytDlpVersion }, { stdout: denoVersion }] = await Promise.all([
-      execFile(bundled.ytDlp, ['--version'], { windowsHide: true, timeout: 5000 }),
-      execFile(bundled.deno, ['--version'], { windowsHide: true, timeout: 5000 }),
-    ]);
-    if (ytDlpVersion.trim() && denoVersion.trim()) {
-      return { python: false, ytDlp: true, deno: true, bundled: true, executable: bundled.ytDlp };
+    const { stdout: ytDlpVersion } = await execFile(bundled.ytDlp, ['--version'], { windowsHide: true, timeout: 5000 });
+    if (ytDlpVersion.trim()) {
+      return { python: false, ytDlp: true, deno: Boolean(bundled.deno), bundled: true, executable: bundled.ytDlp };
     }
   } catch {}
-  if (fs.existsSync(bundled.ytDlp) || fs.existsSync(bundled.deno)) {
-    return { python: false, ytDlp: false, deno: fs.existsSync(bundled.deno), bundled: true, executable: bundled.ytDlp };
+  if (fs.existsSync(bundled.ytDlp)) {
+    return { python: false, ytDlp: false, deno: Boolean(bundled.deno), bundled: true, executable: bundled.ytDlp };
   }
 
   const candidates = [process.env.SUNIFY_PYTHON, 'python', 'py'].filter(Boolean);
@@ -841,14 +850,12 @@ async function getRuntimeStatus() {
 
 // yt-dlp and Deno both have a cold-start cost; warm them once in the background.
 function warmUp() {
-  const { ytDlp, deno } = getBundledRuntimePaths();
-  for (const [executable, args] of [[ytDlp, ['--version']], [deno, ['--version']]]) {
-    if (!fs.existsSync(executable)) continue;
-    try {
-      const child = spawn(executable, args, { windowsHide: true, stdio: 'ignore' });
-      child.on('error', () => {});
-    } catch {}
-  }
+  const { ytDlp } = getBundledRuntimePaths();
+  if (!fs.existsSync(ytDlp)) return;
+  try {
+    const child = spawn(ytDlp, ['--version'], { windowsHide: true, stdio: 'ignore' });
+    child.on('error', () => {});
+  } catch {}
 }
 
 module.exports = { getDirectAudioUrl, getCachedAudioFile, getCachedAudioByKey, writeAudioCacheMetadata, isProgressivelyPlayableAudio, startCachedAudioDownload, listCachedAudioFiles, getAudioCacheDirectory, getAudioCacheStats, clearAudioCache, setAudioCacheLimit, getRuntimeStatus, getActiveExtractions, getQueuedDownloads: () => pendingLowStarts, setQueryResolver, warmUp };

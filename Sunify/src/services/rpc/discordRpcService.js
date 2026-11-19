@@ -1,15 +1,14 @@
 // discordRpcService.js
-// Sunify Discord Rich Presence (Doğrudan IPC Socket Motoru)
-// Discord Developer Portal'da kayıtlı onaylı "Sunify" uygulaması Client ID'si
+// Sunify Discord Rich Presence (Doğrudan IPC Socket Motoru - Yerel Sunucu Yedeği)
 const net = require('net');
 const fs = require('fs');
+const { cleanTrackMetadata } = require('../audio/metadataCleaner');
 
-const CLIENT_ID = '1570821512984793228'; // Sunify Client ID
+const CLIENT_ID = '1570821512984793228';
 let ipcSocket = null;
 let isConnected = false;
 let currentActivity = null;
 
-// Windows Discord IPC Named Pipe bulucu
 function getDiscordPipe() {
   const prefix = '\\\\?\\pipe\\';
   for (let i = 0; i < 10; i++) {
@@ -26,13 +25,12 @@ function connectToDiscord() {
 
   const pipePath = getDiscordPipe();
   ipcSocket = net.createConnection(pipePath, () => {
-    // 1. Handshake Paketi Gönder (Opcode 0)
     sendPacket(0, { v: 1, client_id: CLIENT_ID });
   });
 
   ipcSocket.on('data', (data) => {
     try {
-      data.readInt32LE(0); // Validate the Discord IPC frame header.
+      data.readInt32LE(0);
       const length = data.readInt32LE(4);
       const body = JSON.parse(data.slice(8, 8 + length).toString());
 
@@ -54,7 +52,6 @@ function connectToDiscord() {
   ipcSocket.on('close', () => {
     isConnected = false;
     ipcSocket = null;
-    // Discord açılırsa 5 saniye sonra tekrar bağlanmayı dene
     setTimeout(connectToDiscord, 5000);
   });
 }
@@ -80,40 +77,54 @@ function sendActivity(act) {
       pid: process.pid,
       activity: act,
     },
-    nonce: nonce,
+    nonce,
   });
+}
+
+function formatClock(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function updateDiscordPresence(track, position = 0, duration = 0, isPlaying = true) {
   if (!track || !track.title) return;
 
+  const cleaned = cleanTrackMetadata(track.title || '', track.artist || '');
+  let title = (cleaned.title || track.title || 'Sunify').replace(/\s*\((?:offiziell[^)]*|official[^)]*|hd|4k)\)/gi, '').trim();
+  let artist = (cleaned.artist || track.artist || 'Bilinmeyen Sanatçı').replace(/\s*-\s*Topic$/i, '').trim();
+  if (title.length < 2) title += ' ';
+  if (artist.length < 2) artist += ' ';
+
   const nowMs = Date.now();
   const startTimestamp = isPlaying ? Math.floor(nowMs - position * 1000) : undefined;
-  const endTimestamp =
-    isPlaying && duration > 0 ? Math.floor(startTimestamp + duration * 1000) : undefined;
+  const endTimestamp = isPlaying && duration > 0 ? Math.floor(startTimestamp + duration * 1000) : undefined;
 
-  const coverUrl =
-    track.thumbnail && track.thumbnail.startsWith('http')
-      ? track.thumbnail
-      : 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300';
+  const coverUrl = track.thumbnail && track.thumbnail.startsWith('http')
+    ? track.thumbnail
+    : 'sunify_logo';
 
+  const vidMatch = coverUrl.match(/i\.ytimg\.com\/vi\/([a-zA-Z0-9_-]{11})\//);
+  const videoId = /^[a-zA-Z0-9_-]{11}$/.test(String(track.id || '')) ? String(track.id) : (vidMatch?.[1] || '');
+  const listenUrl = videoId
+    ? `https://music.youtube.com/watch?v=${videoId}`
+    : `https://music.youtube.com/search?q=${encodeURIComponent(`${artist} ${title}`.trim())}`;
+
+  const durationBadge = duration > 0 ? ` [${formatClock(position)} / ${formatClock(duration)}]` : '';
   const activity = {
-    type: 2, // 2 = Dinliyor (Listening)
-    details: track.title.substring(0, 127), // Şarkı Adı (Büyük başlık)
-    state: (track.artist || 'Bilinmeyen Sanatçı').substring(0, 127), // Alt satırda yalnızca sanatçı; süreyi Discord gösterir.
-    timestamps:
-      isPlaying && endTimestamp
-        ? {
-            start: startTimestamp,
-            end: endTimestamp, // Spotify gibi sol/sağ zaman çubuğu
-          }
-        : undefined,
+    type: 2,
+    details: title.substring(0, 127),
+    state: (isPlaying ? `sanatçı: ${artist}` : `⏸ Duraklatıldı · ${artist}`).substring(0, 127),
+    timestamps: isPlaying && endTimestamp ? { start: startTimestamp, end: endTimestamp } : undefined,
     assets: {
       large_image: coverUrl,
-      large_text: `${track.title} - Sunify`,
+      large_text: `${title} — ${artist}${durationBadge}`.substring(0, 127),
       small_image: 'sunify_logo',
-      small_text: isPlaying ? 'Sunify Music' : 'Duraklatıldı',
+      small_text: isPlaying ? '▶ Sunify Desktop • Şimdi Çalıyor' : '⏸ Duraklatıldı',
     },
+    buttons: [
+      { label: '🎵 Şarkıyı Dinle', url: listenUrl },
+      { label: '✨ Sunify İndir', url: 'https://github.com/Kadir-72I/Sunify/releases/latest' },
+    ],
   };
 
   currentActivity = activity;
@@ -131,5 +142,7 @@ function clearDiscordPresence() {
     sendActivity(null);
   }
 }
+
+connectToDiscord();
 
 module.exports = { updateDiscordPresence, clearDiscordPresence };

@@ -515,6 +515,8 @@ for (const [channel, action] of [
 ipcMain.on('discord-rpc-update', (event, data) => {
   if (!fromAppWindow(event) || !data || typeof data !== 'object') return;
   updatePresence({
+    id: String(data.id || '').slice(0, 64),
+    url: typeof data.url === 'string' && data.url.startsWith('https://') ? data.url.slice(0, 300) : '',
     title: String(data.title || '').slice(0, 127),
     artist: String(data.artist || '').slice(0, 127),
     thumbnail: typeof data.thumbnail === 'string' && data.thumbnail.startsWith('https://') ? data.thumbnail : '',

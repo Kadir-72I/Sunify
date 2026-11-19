@@ -49,27 +49,18 @@ async function main() {
   if (process.platform !== 'win32') throw new Error('The self-contained installer build currently targets Windows x64.');
   await fs.mkdir(runtimeDir, { recursive: true });
 
-  const [ytDlpRelease, denoRelease] = await Promise.all([
-    requestJson('https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest'),
-    requestJson('https://api.github.com/repos/denoland/deno/releases/latest'),
-  ]);
+  const ytDlpRelease = await requestJson('https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest');
   const ytDlpAsset = ytDlpRelease.assets.find((asset) => asset.name === 'yt-dlp_win.zip');
-  const denoAsset = denoRelease.assets.find((asset) => /^deno-x86_64-pc-windows-msvc\.zip$/i.test(asset.name));
-  if (!ytDlpAsset || !denoAsset) throw new Error('Could not find the official unpackaged yt-dlp Windows x64 zip and Windows x64 Deno release assets.');
+  if (!ytDlpAsset) throw new Error('Could not find the official unpackaged yt-dlp Windows x64 zip release asset.');
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sunify-runtime-'));
   try {
     const ytDlpZipPath = path.join(tempDir, ytDlpAsset.name);
     const ytDlpExtractDir = path.join(tempDir, 'yt-dlp-extracted');
     const ytDlpStagingDir = path.join(tempDir, 'yt-dlp');
-    const denoZipPath = path.join(tempDir, denoAsset.name);
-    const denoExtractDir = path.join(tempDir, 'deno');
-    await Promise.all([
-      downloadVerified(ytDlpAsset, ytDlpZipPath, ['github.com']),
-      downloadVerified(denoAsset, denoZipPath, ['github.com']),
-    ]);
+    await downloadVerified(ytDlpAsset, ytDlpZipPath, ['github.com']);
     await fs.mkdir(ytDlpExtractDir, { recursive: true });
-    await require('node:child_process').execFileSync('tar.exe', ['-xf', ytDlpZipPath, '-C', ytDlpExtractDir], {
+    require('node:child_process').execFileSync('tar.exe', ['-xf', ytDlpZipPath, '-C', ytDlpExtractDir], {
       windowsHide: true,
       stdio: 'pipe',
     });
@@ -99,38 +90,25 @@ async function main() {
     }
     if (movedPrevious) await fs.rm(previousYtDlpRuntimeDir, { recursive: true, force: true });
 
-    await fs.mkdir(denoExtractDir, { recursive: true });
-    await require('node:child_process').execFileSync('tar.exe', ['-xf', denoZipPath, '-C', denoExtractDir], {
-      windowsHide: true,
-      stdio: 'pipe',
-    });
-    const denoExe = await findFile(denoExtractDir, 'deno.exe');
-    if (!denoExe) throw new Error('Deno release archive did not contain deno.exe.');
-    await fs.copyFile(denoExe, path.join(runtimeDir, 'deno.exe'));
+    // Remove legacy 115 MB deno.exe if present
+    await fs.rm(path.join(runtimeDir, 'deno.exe'), { force: true }).catch(() => {});
 
-    const [ytDlpLicense, denoLicense] = await Promise.all([
-      downloadLicense(ytDlpRelease.tag_name, 'yt-dlp/yt-dlp', 'LICENSE'),
-      downloadLicense(denoRelease.tag_name, 'denoland/deno', 'LICENSE.md'),
-    ]);
+    const ytDlpLicense = await downloadLicense(ytDlpRelease.tag_name, 'yt-dlp/yt-dlp', 'LICENSE');
     const notice = [
       'Sunify third-party runtime notices',
       `yt-dlp ${ytDlpRelease.tag_name} (Windows unpackaged x64 executable with _internal runtime)`,
       'Source: https://github.com/yt-dlp/yt-dlp',
       ytDlpLicense.trim(),
       '',
-      `Deno ${denoRelease.tag_name} (Windows x64 runtime)`,
-      'Source: https://github.com/denoland/deno',
-      denoLicense.trim(),
-      '',
     ].join('\n');
     await fs.writeFile(path.join(runtimeDir, 'THIRD-PARTY-NOTICES.txt'), notice, 'utf8');
-    console.log(`Prepared verified yt-dlp ${ytDlpRelease.tag_name} and Deno ${denoRelease.tag_name} runtimes.`);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+  console.log(`Prepared bundled Windows runtime in ${runtimeDir}`);
 }
 
 main().catch((error) => {
-  console.error(`Windows runtime preparation failed: ${error.message}`);
-  process.exitCode = 1;
+  console.error(error.message);
+  process.exit(1);
 });
